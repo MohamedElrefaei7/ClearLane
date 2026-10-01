@@ -41,17 +41,19 @@ Each milestone is one or a small number of commits with a single done-condition.
 - 2026-10-01 — Hourly hour-of-week bins (168 slots), not 3-hour bins. Accepted with M1's sparsity numbers in view (~0.002–0.005 expected raw requests per cell-slot-month); signal will come from pooling across months and baseline shrinkage.
 - 2026-10-01 — Splits: train 2021-01 → 2024-09, validate 2024-10 → 2025-09, test 2025-10 → 2026-09. Replaces the initial proposal (train ≤ 2024-12 / val 2025-01→06 / test 2025-07→2026-06), which predated data through 2026-09 and had a spring/summer-only validation window. Train start skips pre-2019-07 low volume and the 2020 COVID dip. Raw requests in the target store (pull of 2026-10-01): train 80,409, val 19,656, test 19,114.
 - 2026-10-01 — Propensity stays "all non-target 311 complaint types" (CLAUDE.md as written). Double-parking complaints are not used as the propensity denominator: they track the same street behaviour as the target and would cancel real hotspots in the reporting-adjusted layer.
+- 2026-10-01 — M3: the bike network = on-street class I (protected) and II (painted) segments of `mzxg-pwib` (`facilitycl` in I/II, `onoffst = ON`), scope `lanes_on_street`. Shared/signed routes (III), links and off-street paths are excluded: no lane to block / no car access. Costs ~2% of 2021+ complaints (90.0% vs 92.2% within 40 m of an in-scope active lane) and removes ~1,000 near-structural-zero cells (2,530 vs 3,566 ever on network).
+- 2026-10-01 — M3: segment activity = [instdate, ret_date); a cell is on network in month M only if an in-scope segment touching it is active for all of M. 18 segments with undeterminable dates (17 Retired without `ret_date`, 1 retired before installed) are never active. `route_id` (Socrata `:id`) is stable only within one bike-routes snapshot.
 - 2026-10-01 — M2: 311 is pulled from both `76ig-c548` (2010–2019) and `erm2-nwe9` (2020–present), one created-month per query. Target store = raw rows of the target pair, upserted on `unique_key` (rows that vanish upstream are reported, not deleted). Propensity store = all *non-target* 311 requests counted per month × 0.002° grid cell via server-side `snap_to_grid` (rounds to nearest; points are cell centres, ~0.04 km² cells, finer than H3 res 9); mapping to H3 happens in M3/M7. `created_date` stored naive (NYC wall clock), never tz-localized.
 
 ## Numbers to fill in
 
 - 311 blocked-bike-lane rows per year (M1): 2016: 916 (from 2016-10-19) · 2017: 3,605 · 2018: 5,700 · 2019: 17,699 · 2020: 8,255 · 2021: 13,362 · 2022: 20,642 · 2023: 28,127 · 2024: 23,548 · 2025: 18,887 · 2026: 14,613 (partial, to 2026-09-29). Raw requests, `Illegal Parking / Blocked Bike Lane`, combined across `76ig-c548` (2010–2019) and `erm2-nwe9` (2020–present). Source: reports/m1_audit.md §3.
 - 311 rows ingested (M2, pull of 2026-10-01): target 155,354 (2016-10-19 → 2026-09-30; 494 with null coords); propensity 32,801,521 non-target requests 2016-01 → 2026-09, 1,190,057 without location.
-- On-network cell count (M3):
+- On-network cell count (M3, snapshot 2026-10-01, scope lanes_on_street): 2,530 cells ever on network 2021-01 → 2026-09; 2,147 in 2021-01, 2,520 in 2026-09; 162,257 cell-months.
 - Snap dropped fraction (M4):
 - Baseline val deviance / top-decile capture (M6):
 - LightGBM val deviance / top-decile capture (M8):
 
 ## Up Next
 
-M3 — bike network + grid (DOT `mzxg-pwib`: `instdate`, `ret_date`, `status`; facility-type column still to choose among `ft_facilit`/`tf_facilit`/`facilitycl`/`allclasses`/…).
+M4 — snapping: assign complaints to the nearest active in-scope segment within `SNAP_TOLERANCE_M` (40 m), extend the invariant 2 test to the nearest-lane case, record the dropped fraction. Lane-type column choice (`facilitycl` vs `ft_facilit`/`tf_facilit`) deferred to M7.

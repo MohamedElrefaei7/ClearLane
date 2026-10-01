@@ -13,6 +13,9 @@ dependencies = [
     "pandas",
     "matplotlib",
     "pyarrow",
+    "geopandas",
+    "shapely",
+    "h3>=4",
 ]
 
 [project.optional-dependencies]
