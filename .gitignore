@@ -216,3 +216,15 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ClearLane
+# data/ contents are never committed; directories are kept via .gitkeep
+data/**
+!data/
+!data/*/
+!data/**/.gitkeep
+.venv/
+__pycache__/
+*.egg-info/
+.env
+.pytest_cache/
