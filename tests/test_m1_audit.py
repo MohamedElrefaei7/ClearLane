@@ -1,7 +1,8 @@
 import pandas as pd
 import pytest
 
-from clearlane.audit.m1_audit import SECTIONS, mom_changes, render_report, sparsity, month_chunks, filter_pairs
+from clearlane.audit.m1_audit import SECTIONS, filter_pairs, mom_changes, render_report, sparsity
+from clearlane.ingest.sr311 import month_chunks
 
 OLD, NEW = "76ig-c548", "erm2-nwe9"
 TW = {"complaint_type": "Illegal Parking", "descriptor": "Blocked Bike Lane"}

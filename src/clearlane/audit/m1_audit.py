@@ -26,8 +26,8 @@ from typing import Any, Callable
 
 import pandas as pd
 
-from clearlane.audit import socrata
-from clearlane.audit.socrata import (
+from clearlane.ingest import socrata
+from clearlane.ingest.socrata import (
     DISCOVERY_URL,
     NYC_LAT_MAX,
     NYC_LAT_MIN,
@@ -36,14 +36,7 @@ from clearlane.audit.socrata import (
     build_params,
     to_hour_of_week,
 )
-
-# NYC Open Data split the 311 dataset: erm2-nwe9 now covers 2020 onward and
-# 2010-2019 lives in 76ig-c548. Queries spanning both are routed to each and
-# combined. Bounds are [start, end) on created_date; None = open-ended.
-SR_DATASETS = [
-    ("76ig-c548", "311 Service Requests from 2010 to 2019", "2010-01-01", "2020-01-01"),
-    ("erm2-nwe9", "311 Service Requests from 2020 to Present", "2020-01-01", None),
-]
+from clearlane.ingest.sr311 import SR_DATASETS, date_where, datasets_for, month_chunks, target_where
 
 WORKERS = 4  # concurrent month-chunk requests per query
 
@@ -100,53 +93,6 @@ def mom_changes(series: pd.Series, k: int = 5) -> tuple[pd.DataFrame, pd.DataFra
     drops = df[df["change"] < 0].nsmallest(k, "change").reset_index(drop=True)
     rises = df[df["change"] > 0].nlargest(k, "change").reset_index(drop=True)
     return drops, rises
-
-
-def soql_str(value: str) -> str:
-    return "'" + value.replace("'", "''") + "'"
-
-
-def target_where(pair: tuple[str, str]) -> str:
-    return f"complaint_type={soql_str(pair[0])} AND descriptor={soql_str(pair[1])}"
-
-
-def date_where(start: str | None, end: str | None) -> list[str]:
-    out = []
-    if start:
-        out.append(f"created_date >= '{start}T00:00:00'")
-    if end:
-        out.append(f"created_date < '{end}T00:00:00'")
-    return out
-
-
-def datasets_for(start: str | None, end: str | None) -> list[tuple[str, str | None, str | None]]:
-    """311 datasets overlapping [start, end), with the range clipped to each."""
-    out = []
-    for ds, _name, ds_start, ds_end in SR_DATASETS:
-        lo = max(filter(None, [start, ds_start]), default=None)
-        hi = min(filter(None, [end, ds_end]), default=None)
-        if lo and hi and lo >= hi:
-            continue
-        out.append((ds, lo, hi))
-    return out
-
-
-def month_chunks(start: str, end: str) -> list[tuple[str, str]]:
-    """Split [start, end) (ISO dates) at calendar-month boundaries.
-
-    Socrata times out or drops the connection on multi-month aggregates over
-    the 311 dataset (a full-year `upper(...) like` scan can exceed 10 minutes),
-    while single-month ones return in about a second.
-    """
-    out = []
-    lo = start
-    while lo < end:
-        y, m = int(lo[:4]), int(lo[5:7])
-        nxt = f"{y + (m == 12)}-{m % 12 + 1:02d}-01"
-        hi = min(nxt, end)
-        out.append((lo, hi))
-        lo = hi
-    return out
 
 
 def plausible_target_pairs(rows: list[dict]) -> list[dict]:

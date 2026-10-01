@@ -38,10 +38,13 @@ Each milestone is one or a small number of commits with a single done-condition.
 - 2026-09-30 — H3 res 9, hour-of-week × month panel, Poisson LightGBM with exposure offset vs. empirical-Bayes baseline.
 - 2026-09-30 — DOF ticket data deferred from v1 pending M1 check on coordinates.
 - 2026-10-01 — M1: Socrata `date_extract_dow` verified as 0 = Sunday (2025-06-02, a Monday, returned 1); target is `complaint_type='Illegal Parking'`, `descriptor='Blocked Bike Lane'`.
+- 2026-10-01 — Hourly hour-of-week bins (168 slots), not 3-hour bins. Accepted with M1's sparsity numbers in view (~0.002–0.005 expected raw requests per cell-slot-month); signal will come from pooling across months and baseline shrinkage.
+- 2026-10-01 — M2: 311 is pulled from both `76ig-c548` (2010–2019) and `erm2-nwe9` (2020–present), one created-month per query. Target store = raw rows of the target pair, upserted on `unique_key` (rows that vanish upstream are reported, not deleted). Propensity store = all *non-target* 311 requests counted per month × 0.002° grid cell via server-side `snap_to_grid` (rounds to nearest; points are cell centres, ~0.04 km² cells, finer than H3 res 9); mapping to H3 happens in M3/M7. `created_date` stored naive (NYC wall clock), never tz-localized.
 
 ## Numbers to fill in
 
 - 311 blocked-bike-lane rows per year (M1): 2016: 916 (from 2016-10-19) · 2017: 3,605 · 2018: 5,700 · 2019: 17,699 · 2020: 8,255 · 2021: 13,362 · 2022: 20,642 · 2023: 28,127 · 2024: 23,548 · 2025: 18,887 · 2026: 14,613 (partial, to 2026-09-29). Raw requests, `Illegal Parking / Blocked Bike Lane`, combined across `76ig-c548` (2010–2019) and `erm2-nwe9` (2020–present). Source: reports/m1_audit.md §3.
+- 311 rows ingested (M2, pull of 2026-10-01): target 155,354 (2016-10-19 → 2026-09-30; 494 with null coords); propensity 32,801,521 non-target requests 2016-01 → 2026-09, 1,190,057 without location.
 - On-network cell count (M3):
 - Snap dropped fraction (M4):
 - Baseline val deviance / top-decile capture (M6):
@@ -49,4 +52,4 @@ Each milestone is one or a small number of commits with a single done-condition.
 
 ## Up Next
 
-Review M1 audit; decide split dates and hourly vs 3-hour bins.
+M3 — bike network + grid (DOT `mzxg-pwib`: `instdate`, `ret_date`, `status`; facility-type column still to choose among `ft_facilit`/`tf_facilit`/`facilitycl`/`allclasses`/…). Still open: split dates (needed by M6).

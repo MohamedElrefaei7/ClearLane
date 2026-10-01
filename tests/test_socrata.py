@@ -1,7 +1,7 @@
 import pytest
 
-from clearlane.audit import socrata
-from clearlane.audit.socrata import (
+from clearlane.ingest import socrata
+from clearlane.ingest.socrata import (
     TruncatedResponseError,
     build_params,
     fetch,
@@ -100,6 +100,31 @@ def test_failed_fetch_is_not_cached(monkeypatch, tmp_path):
     with pytest.raises(socrata.requests.HTTPError):
         fetch(SR_311, build_params(limit=5), cache_dir=tmp_path)
     assert not list(tmp_path.glob("*.json"))
+
+
+def test_fetch_pages_pages_until_short_page(monkeypatch):
+    seen = []
+
+    def _get(url, params=None, headers=None, timeout=None):
+        seen.append((params["$offset"], params["$order"]))
+        size = {"0": 2, "2": 2, "4": 1}[params["$offset"]]
+        return FakeResponse([{"k": params["$offset"]}] * size)
+
+    monkeypatch.setattr(socrata.requests, "get", _get)
+    rows = socrata.fetch_pages(SR_311, build_params(limit=2), order="unique_key")
+    assert len(rows) == 5
+    assert seen == [("0", "unique_key"), ("2", "unique_key"), ("4", "unique_key")]
+
+
+def test_fetch_pages_rejects_grouped_queries():
+    with pytest.raises(ValueError):
+        socrata.fetch_pages(SR_311, build_params(group="x"), order="x")
+
+
+def test_fetch_live_checks_truncation(fake_get):
+    fake_get["payload"] = [{"n": "1"}] * 3
+    with pytest.raises(TruncatedResponseError):
+        socrata.fetch_live(SR_311, build_params(group="x", limit=3))
 
 
 @pytest.mark.parametrize("sunday_is_zero, monday_dow, sunday_dow", [(True, 1, 0), (False, 0, 6)])

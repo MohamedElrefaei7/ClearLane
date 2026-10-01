@@ -1,9 +1,10 @@
-"""Thin Socrata (SODA) client plus pure helpers used by the M1 audit.
+"""Thin Socrata (SODA) client plus pure helpers.
 
-Network code is confined to `fetch` / `fetch_url`; everything else is pure so
-it can be tested offline. Every response is cached as raw JSON under
-`cache_dir` keyed by a stable hash of (url, sorted params), so the audit
-report can be regenerated offline.
+Network code is confined to `fetch` / `fetch_url` (cached; used by the M1
+audit) and `fetch_pages` (uncached; used by ingestion, whose output store is
+Parquet). Everything else is pure so it can be tested offline. Cached
+responses are raw JSON under `cache_dir`, keyed by a stable hash of
+(url, sorted params), so the audit report can be regenerated offline.
 """
 
 from __future__ import annotations
@@ -140,6 +141,34 @@ def fetch(
 ) -> Any:
     """Query an NYC Open Data dataset by id. See `fetch_url`."""
     return fetch_url(BASE_URL.format(dataset_id=dataset_id), params, cache_dir, refresh)
+
+
+def fetch_live(dataset_id: str, params: dict[str, Any]) -> Any:
+    """Uncached single query (with retries and the grouped-truncation check)."""
+    data = _get_with_retry(BASE_URL.format(dataset_id=dataset_id), params)
+    check_truncation(data, params)
+    return data
+
+
+def fetch_pages(dataset_id: str, params: dict[str, Any], order: str) -> list[dict]:
+    """Uncached, paged raw-row query. `order` must be a unique, stable key.
+
+    Requests pages of `$limit` rows with increasing `$offset` until a short
+    page comes back. Not for grouped queries (use `fetch`, which raises on
+    truncation).
+    """
+    if "$group" in params:
+        raise ValueError("fetch_pages is for raw rows; grouped queries go through fetch()")
+    url = BASE_URL.format(dataset_id=dataset_id)
+    limit = int(params["$limit"])
+    rows: list[dict] = []
+    offset = 0
+    while True:
+        page = _get_with_retry(url, {**params, "$order": order, "$offset": str(offset)})
+        rows.extend(page)
+        if len(page) < limit:
+            return rows
+        offset += limit
 
 
 def to_hour_of_week(socrata_dow: int, hour: int, sunday_is_zero: bool) -> int:
