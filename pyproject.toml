@@ -16,6 +16,7 @@ dependencies = [
     "geopandas",
     "shapely",
     "h3>=4",
+    "scipy",
 ]
 
 [project.optional-dependencies]

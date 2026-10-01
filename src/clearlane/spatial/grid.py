@@ -74,6 +74,22 @@ def network_cell_months(
     return out.astype({"cell": "string", "month": "string", "n_segments": "int64"})
 
 
+BOROUGHS = {"1": "Manhattan", "2": "Bronx", "3": "Brooklyn", "4": "Queens", "5": "Staten Island"}
+
+
+def cell_boroughs(segments: pd.DataFrame, seg_cells: pd.DataFrame, scope: str = DEFAULT_SCOPE) -> pd.DataFrame:
+    """(cell, boro): the borough of most in-scope usable segments touching the cell.
+
+    Ties go to the lower borough code. Uses every in-scope segment regardless of
+    date, so cells that join the network later still get a borough.
+    """
+    ids = segments.loc[segments["usable"] & in_scope(segments, scope), ["route_id", "boro"]]
+    pairs = seg_cells.merge(ids, on="route_id")
+    counts = pairs.groupby(["cell", "boro"]).size().rename("n").reset_index()
+    best = counts.sort_values(["cell", "n", "boro"], ascending=[True, False, True]).drop_duplicates("cell")
+    return best[["cell", "boro"]].reset_index(drop=True).astype("string")
+
+
 def summarize(network: pd.DataFrame) -> dict:
     per_month = network.groupby("month")["cell"].nunique()
     return {
