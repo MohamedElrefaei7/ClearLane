@@ -14,13 +14,13 @@ The target is **reported** obstruction (311 "Blocked Bike Lane" requests), not o
 
 | Source | Use | Notes |
 |---|---|---|
-| 311 Service Requests, 2010–present (NYC Open Data `erm2-nwe9`, Socrata API) | Target events | Filter to the blocked-bike-lane category. Exact `complaint_type`/`descriptor` values to be confirmed in M1. Category exists from Nov 2016. |
-| Same 311 dataset, all other complaint types | Reporting-propensity feature | General "how much does this cell call 311" signal. |
-| NYC DOT Bicycle Routes (NYC Open Data, line segments) | Spatial frame + lane-type features | Uses facility type, `instdate`, `ret_date`, `status`. Field names to be confirmed in M1. |
+| 311 Service Requests (NYC Open Data, Socrata API): `76ig-c548` "311 Service Requests from 2010 to 2019" and `erm2-nwe9` "311 Service Requests from 2020 to Present" | Target events | Filter to the blocked-bike-lane category. Exact `complaint_type`/`descriptor` values to be confirmed in M1. Category exists from Nov 2016. |
+| Same 311 datasets, all other complaint types | Reporting-propensity feature | General "how much does this cell call 311" signal. |
+| NYC DOT "New York City Bike Routes" (NYC Open Data `mzxg-pwib`, line segments) | Spatial frame + lane-type features | Uses facility type, `instdate`, `ret_date`, `status`. Field names to be confirmed in M1. |
 | Citi Bike trip data (public S3 tripdata) | Cyclist-exposure proxy | Station-level trip starts/ends, aggregated to cells. Coverage is uneven outside Manhattan/Brooklyn/western Queens — treat as a feature, not ground truth. |
 | MapPLUTO land use | Commercial-frontage feature | Delivery double-parking should track commercial density. |
 | NOAA daily weather (Central Park) | v2 feature only | Not in v1. |
-| DOF Parking Violations Issued | **Deferred** | Believed to carry street address, not coordinates; geocoding millions of rows is out of v1 scope. Confirm in M1. |
+| DOF "Parking Violations Issued - Fiscal Year NNNN" (one dataset per fiscal year; FY2027 = `pvqr-7yc4`) | **Deferred** | Believed to carry street address, not coordinates; geocoding millions of rows is out of v1 scope. Confirm in M1. |
 
 ## Core design decisions
 
