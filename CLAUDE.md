@@ -36,7 +36,7 @@ The target is **reported** obstruction (311 "Blocked Bike Lane" requests), not o
 
 **Panel grain.** One row per (cell, hour_of_week, calendar month). `y` = incident count. `exposure` = number of times that hour-of-week occurred in that month while the cell was on network. Zero rows are explicit.
 
-**Splits.** Strictly temporal, never random. Initial proposal: train through 2024-12, validate 2025-01 → 2025-06, test 2025-07 → 2026-06. Adjust once M1 shows regime breaks (2020 COVID dip, any 311 app changes). Test period is touched once per model version.
+**Splits.** Strictly temporal, never random. Train 2021-01 → 2024-09, validate 2024-10 → 2025-09, test 2025-10 → 2026-09 (set after M1). Training starts in 2021 to skip the sparse pre-2019-07 regime and the 2020 COVID collapse; validation is a full year so the ship decision sees every season. Test period is touched once per model version.
 
 **Models.**
 Baseline: empirical-Bayes rate per (cell, hour_of_week) — Gamma-Poisson shrinkage toward the borough × hour-of-week rate.

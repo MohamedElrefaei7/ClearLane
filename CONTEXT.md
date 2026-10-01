@@ -39,6 +39,8 @@ Each milestone is one or a small number of commits with a single done-condition.
 - 2026-09-30 — DOF ticket data deferred from v1 pending M1 check on coordinates.
 - 2026-10-01 — M1: Socrata `date_extract_dow` verified as 0 = Sunday (2025-06-02, a Monday, returned 1); target is `complaint_type='Illegal Parking'`, `descriptor='Blocked Bike Lane'`.
 - 2026-10-01 — Hourly hour-of-week bins (168 slots), not 3-hour bins. Accepted with M1's sparsity numbers in view (~0.002–0.005 expected raw requests per cell-slot-month); signal will come from pooling across months and baseline shrinkage.
+- 2026-10-01 — Splits: train 2021-01 → 2024-09, validate 2024-10 → 2025-09, test 2025-10 → 2026-09. Replaces the initial proposal (train ≤ 2024-12 / val 2025-01→06 / test 2025-07→2026-06), which predated data through 2026-09 and had a spring/summer-only validation window. Train start skips pre-2019-07 low volume and the 2020 COVID dip. Raw requests in the target store (pull of 2026-10-01): train 80,409, val 19,656, test 19,114.
+- 2026-10-01 — Propensity stays "all non-target 311 complaint types" (CLAUDE.md as written). Double-parking complaints are not used as the propensity denominator: they track the same street behaviour as the target and would cancel real hotspots in the reporting-adjusted layer.
 - 2026-10-01 — M2: 311 is pulled from both `76ig-c548` (2010–2019) and `erm2-nwe9` (2020–present), one created-month per query. Target store = raw rows of the target pair, upserted on `unique_key` (rows that vanish upstream are reported, not deleted). Propensity store = all *non-target* 311 requests counted per month × 0.002° grid cell via server-side `snap_to_grid` (rounds to nearest; points are cell centres, ~0.04 km² cells, finer than H3 res 9); mapping to H3 happens in M3/M7. `created_date` stored naive (NYC wall clock), never tz-localized.
 
 ## Numbers to fill in
@@ -52,4 +54,4 @@ Each milestone is one or a small number of commits with a single done-condition.
 
 ## Up Next
 
-M3 — bike network + grid (DOT `mzxg-pwib`: `instdate`, `ret_date`, `status`; facility-type column still to choose among `ft_facilit`/`tf_facilit`/`facilitycl`/`allclasses`/…). Still open: split dates (needed by M6).
+M3 — bike network + grid (DOT `mzxg-pwib`: `instdate`, `ret_date`, `status`; facility-type column still to choose among `ft_facilit`/`tf_facilit`/`facilitycl`/`allclasses`/…).
