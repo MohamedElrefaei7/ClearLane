@@ -13,11 +13,13 @@ SR_311 = "erm2-nwe9"
 
 
 class FakeResponse:
-    def __init__(self, payload):
+    def __init__(self, payload, status_code=200):
         self._payload = payload
+        self.status_code = status_code
 
     def raise_for_status(self):
-        pass
+        if self.status_code >= 400:
+            raise socrata.requests.HTTPError(str(self.status_code))
 
     def json(self):
         return self._payload
@@ -76,6 +78,28 @@ def test_cache_key_ignores_param_order(fake_get, tmp_path):
     fetch(SR_311, a, cache_dir=tmp_path)
     fetch(SR_311, b, cache_dir=tmp_path)
     assert fake_get["calls"] == 1
+
+
+def test_retries_on_5xx_then_caches(monkeypatch, tmp_path):
+    statuses = iter([500, 200])
+    calls = []
+
+    def _get(url, params=None, headers=None, timeout=None):
+        calls.append(1)
+        return FakeResponse([{"n": "1"}], next(statuses))
+
+    monkeypatch.setattr(socrata.requests, "get", _get)
+    monkeypatch.setattr(socrata, "RETRY_BACKOFF_S", 0)
+    assert fetch(SR_311, build_params(limit=5), cache_dir=tmp_path) == [{"n": "1"}]
+    assert len(calls) == 2
+
+
+def test_failed_fetch_is_not_cached(monkeypatch, tmp_path):
+    monkeypatch.setattr(socrata.requests, "get", lambda *a, **k: FakeResponse(None, 500))
+    monkeypatch.setattr(socrata, "RETRY_BACKOFF_S", 0)
+    with pytest.raises(socrata.requests.HTTPError):
+        fetch(SR_311, build_params(limit=5), cache_dir=tmp_path)
+    assert not list(tmp_path.glob("*.json"))
 
 
 @pytest.mark.parametrize("sunday_is_zero, monday_dow, sunday_dow", [(True, 1, 0), (False, 0, 6)])

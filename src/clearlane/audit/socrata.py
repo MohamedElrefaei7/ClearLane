@@ -12,6 +12,8 @@ import hashlib
 import json
 import logging
 import os
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -24,7 +26,9 @@ DISCOVERY_URL = "https://api.us.socrata.com/api/catalog/v1"
 DEFAULT_LIMIT = 50_000
 DEFAULT_CACHE_DIR = Path("data/raw/m1")
 TOKEN_ENV = "SOCRATA_APP_TOKEN"
-TIMEOUT_S = 600
+TIMEOUT_S = 180
+RETRIES = 5
+RETRY_BACKOFF_S = 30
 
 # NYC bounding box used for coordinate-quality checks (audit only).
 NYC_LAT_MIN, NYC_LAT_MAX = 40.47, 40.93
@@ -32,6 +36,7 @@ NYC_LON_MIN, NYC_LON_MAX = -74.27, -73.68
 
 # Cache hit/miss counters for the current process; the audit reports these.
 STATS: dict[str, int] = {"hits": 0, "misses": 0}
+_STATS_LOCK = threading.Lock()
 
 
 class TruncatedResponseError(RuntimeError):
@@ -83,6 +88,23 @@ def _headers() -> dict[str, str]:
     return {"X-App-Token": token} if token else {}
 
 
+def _get_with_retry(url: str, params: dict[str, Any]) -> Any:
+    """GET with retries on connection errors, timeouts and 5xx (Socrata is flaky on heavy aggregates)."""
+    for attempt in range(1, RETRIES + 1):
+        try:
+            resp = requests.get(url, params=params, headers=_headers(), timeout=TIMEOUT_S)
+            if resp.status_code < 500 or attempt == RETRIES:
+                resp.raise_for_status()
+                return resp.json()
+            log.warning("HTTP %s on attempt %d/%d", resp.status_code, attempt, RETRIES)
+        except (requests.ConnectionError, requests.Timeout) as e:
+            if attempt == RETRIES:
+                raise
+            log.warning("%s on attempt %d/%d", type(e).__name__, attempt, RETRIES)
+        time.sleep(RETRY_BACKOFF_S * attempt)
+    raise AssertionError("unreachable")
+
+
 def fetch_url(
     url: str,
     params: dict[str, Any],
@@ -93,17 +115,19 @@ def fetch_url(
     cache_dir = Path(cache_dir)
     path = cache_dir / f"{cache_key(url, params)}.json"
     if path.exists() and not refresh:
-        STATS["hits"] += 1
+        with _STATS_LOCK:
+            STATS["hits"] += 1
         log.debug("cache hit %s", path.name)
         data = json.loads(path.read_text())
     else:
-        STATS["misses"] += 1
+        with _STATS_LOCK:
+            STATS["misses"] += 1
         log.info("cache miss %s -> GET %s %s", path.name, url, params)
-        resp = requests.get(url, params=params, headers=_headers(), timeout=TIMEOUT_S)
-        resp.raise_for_status()
-        data = resp.json()
+        data = _get_with_retry(url, params)
         cache_dir.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(data))
+        tmp = path.with_suffix(f".{threading.get_ident()}.tmp")
+        tmp.write_text(json.dumps(data))
+        tmp.replace(path)  # atomic: an interrupted run never leaves a partial cache file
     check_truncation(data, params)
     return data
 

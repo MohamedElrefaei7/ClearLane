@@ -37,10 +37,11 @@ Each milestone is one or a small number of commits with a single done-condition.
 - 2026-09-30 — Target is reported obstruction (311), framed as such everywhere; true-obstruction claims require M11.
 - 2026-09-30 — H3 res 9, hour-of-week × month panel, Poisson LightGBM with exposure offset vs. empirical-Bayes baseline.
 - 2026-09-30 — DOF ticket data deferred from v1 pending M1 check on coordinates.
+- 2026-10-01 — M1: Socrata `date_extract_dow` verified as 0 = Sunday (2025-06-02, a Monday, returned 1); target is `complaint_type='Illegal Parking'`, `descriptor='Blocked Bike Lane'`.
 
 ## Numbers to fill in
 
-- 311 blocked-bike-lane rows per year (M1):
+- 311 blocked-bike-lane rows per year (M1): 2016: 916 (from 2016-10-19) · 2017: 3,605 · 2018: 5,700 · 2019: 17,699 · 2020: 8,255 · 2021: 13,362 · 2022: 20,642 · 2023: 28,127 · 2024: 23,548 · 2025: 18,887 · 2026: 14,613 (partial, to 2026-09-29). Raw requests, `Illegal Parking / Blocked Bike Lane`, combined across `76ig-c548` (2010–2019) and `erm2-nwe9` (2020–present). Source: reports/m1_audit.md §3.
 - On-network cell count (M3):
 - Snap dropped fraction (M4):
 - Baseline val deviance / top-decile capture (M6):
@@ -48,4 +49,4 @@ Each milestone is one or a small number of commits with a single done-condition.
 
 ## Up Next
 
-M0 scaffold, then M1 audit. M1 is the real gate — everything after it assumes the category is clean and dense enough.
+Review M1 audit; decide split dates and hourly vs 3-hour bins.
