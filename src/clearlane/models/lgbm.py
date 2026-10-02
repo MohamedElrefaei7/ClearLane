@@ -99,7 +99,11 @@ def assemble(panel: pd.DataFrame, cell_month: pd.DataFrame, cell_how: pd.DataFra
 
 
 def load_split(name: str, drop_prefixes: tuple[str, ...] = ()) -> tuple[pd.DataFrame, pd.DataFrame, np.ndarray, np.ndarray]:
-    months = month_range(*SPLITS[name])
+    return load_months(month_range(*SPLITS[name]), drop_prefixes)
+
+
+def load_months(months: list[str], drop_prefixes: tuple[str, ...] = ()) -> tuple[pd.DataFrame, pd.DataFrame, np.ndarray, np.ndarray]:
+    """(keys, X, y, exposure) for the given panel months."""
     flt = [("month", "in", months)]
     panel = pd.read_parquet(PANEL_PATH, filters=flt)
     panel = panel.assign(cell=panel["cell"].astype(str), month=panel["month"].astype(str))
@@ -127,6 +131,13 @@ def train(X_tr, y_tr, e_tr, X_va, y_va, e_va, params=PARAMS, rounds=NUM_ROUNDS, 
                                    lgb.log_evaluation(100)])
     booster.base_rate = base_rate
     return booster, log
+
+
+def load_model(variant: str) -> tuple[lgb.Booster, dict]:
+    """Saved booster plus its metadata (base_rate, feature order)."""
+    booster = lgb.Booster(model_file=str(ARTIFACT_DIR / f"lgbm_{variant}.txt"))
+    booster.best_iteration = 0  # file was saved at the best iteration
+    return booster, json.loads((ARTIFACT_DIR / f"lgbm_{variant}.json").read_text())
 
 
 def predict_mu(booster: lgb.Booster, X: pd.DataFrame, exposure: np.ndarray, base_rate: float | None = None) -> np.ndarray:

@@ -61,3 +61,25 @@ def test_exposure_is_an_offset():
     est = predict_mu(booster, probe, np.ones(4))
     assert est == pytest.approx([0.01, 0.02, 0.05, 0.1], rel=0.15)
     assert predict_mu(booster, probe, np.full(4, 10.0)) == pytest.approx(10 * est)
+
+
+def test_recalibration_factor_uses_only_prior_months():
+    from clearlane.models.recalibrate import trailing_factor
+    monthly = pd.DataFrame({"observed": [80.0, 90, 100, 70, 999], "predicted": [100.0, 100, 100, 100, 100]},
+                           index=["2025-01", "2025-02", "2025-03", "2025-04", "2025-05"])
+    f = trailing_factor(monthly)
+    assert f.iloc[:3].isna().all()
+    assert f["2025-04"] == pytest.approx(270 / 300)
+    assert f["2025-05"] == pytest.approx(260 / 300)
+    changed = monthly.copy()
+    changed.loc["2025-04", "observed"] = 5000.0  # month M's own data
+    assert trailing_factor(changed)["2025-04"] == f["2025-04"]
+
+
+def test_apply_factor_scales_by_month_and_requires_coverage():
+    from clearlane.models.recalibrate import apply_factor
+    keys = pd.DataFrame({"month": ["2025-04", "2025-05"]})
+    out = apply_factor(keys, np.array([1.0, 1.0]), pd.Series({"2025-04": 0.5, "2025-05": 2.0}))
+    assert out.tolist() == [0.5, 2.0]
+    with pytest.raises(ValueError):
+        apply_factor(keys, np.array([1.0, 1.0]), pd.Series({"2025-04": 0.5}))

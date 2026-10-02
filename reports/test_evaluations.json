@@ -1,0 +1,44 @@
+[
+ {
+  "version": "baseline:3686df4abc0a",
+  "evaluated_at": "2026-10-02T19:56:32-04:00",
+  "commit": "25b2009",
+  "test_months": [
+   "2025-10",
+   "2026-09"
+  ],
+  "mean_poisson_deviance": 0.026923263450406076,
+  "top_decile_capture": 0.586403698887444,
+  "obs_over_pred": 0.902238663368516,
+  "incidents": 13842,
+  "predicted_incidents": 15341.838653112882
+ },
+ {
+  "version": "lgbm_full:c6347c7210d6cc88367404c3",
+  "evaluated_at": "2026-10-02T19:56:32-04:00",
+  "commit": "25b2009",
+  "test_months": [
+   "2025-10",
+   "2026-09"
+  ],
+  "mean_poisson_deviance": 0.02136835267374302,
+  "top_decile_capture": 0.8516832827626065,
+  "obs_over_pred": 0.8635182847425259,
+  "incidents": 13842,
+  "predicted_incidents": 16029.77058456527
+ },
+ {
+  "version": "lgbm_full+recal3m:c6347c7210d6cc88367404c3",
+  "evaluated_at": "2026-10-02T19:56:32-04:00",
+  "commit": "25b2009",
+  "test_months": [
+   "2025-10",
+   "2026-09"
+  ],
+  "mean_poisson_deviance": 0.021326207797475263,
+  "top_decile_capture": 0.8515387949718248,
+  "obs_over_pred": 0.9867259612305637,
+  "incidents": 13842,
+  "predicted_incidents": 14028.21101690422
+ }
+]
