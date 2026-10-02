@@ -17,6 +17,7 @@ dependencies = [
     "shapely",
     "h3>=4",
     "scipy",
+    "lightgbm",
 ]
 
 [project.optional-dependencies]
