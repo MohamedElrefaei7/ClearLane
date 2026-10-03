@@ -18,10 +18,12 @@ dependencies = [
     "h3>=4",
     "scipy",
     "lightgbm",
+    "fastapi",
+    "uvicorn",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest"]
+dev = ["pytest", "httpx"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

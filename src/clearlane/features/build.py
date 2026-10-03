@@ -30,6 +30,7 @@ Feature groups
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 import geopandas as gpd
@@ -247,33 +248,59 @@ def propensity_cells(prop: pd.DataFrame) -> pd.DataFrame:
             .groupby(["cell", "month"])["n"].sum().reset_index())
 
 
+@dataclass
+class Inputs:
+    """Everything the feature builder reads, loaded once."""
+    segments: gpd.GeoDataFrame
+    seg_cells: pd.DataFrame
+    boroughs: pd.DataFrame
+    incidents: pd.DataFrame
+    propensity: pd.DataFrame
+    citibike: pd.DataFrame
+    lots: pd.DataFrame
+
+
+def load_inputs() -> Inputs:
+    segments = gpd.read_parquet(ROUTES_PATH)
+    seg_cells = pd.read_parquet(SEGMENT_CELLS_PATH)
+    incidents = pd.read_parquet(INCIDENTS_PATH)
+    incidents["cell"] = incidents["cell"].astype(str)
+    incidents["month"] = incidents["month"].astype(str)
+    return Inputs(
+        segments=segments,
+        seg_cells=seg_cells,
+        boroughs=cell_boroughs(segments, seg_cells).astype(str),
+        incidents=incidents,
+        propensity=propensity_cells(read_store(Path("data/interim") / PROPENSITY_STORE)),
+        citibike=pd.read_parquet(CITIBIKE_PATH).astype({"cell": str, "month": str}),
+        lots=pd.read_parquet(pluto_ingest.latest()),
+    )
+
+
+def cell_month_features(rows: pd.DataFrame, inp: Inputs, last_month: str) -> pd.DataFrame:
+    """Features for (cell, month) `rows` (sorted month, cell), any months up to `last_month`."""
+    all_months = month_range(HIST_START, last_month)
+    net_hist = network_history(inp.segments, inp.seg_cells, all_months)
+    feats = history_features(rows, inp.incidents, net_hist, inp.propensity, inp.citibike, inp.boroughs, all_months)
+    feats = lane_features(inp.segments, inp.seg_cells, feats)
+    feats = feats.merge(pluto_features(inp.lots, sorted(rows["cell"].unique())), on="cell", how="left")
+    feats["month_of_year"] = feats["month"].str.slice(5, 7).astype("int8")
+    feats["boro"] = feats["cell"].map(inp.boroughs.set_index("cell")["boro"]).astype("int8")
+    return feats
+
+
 def main() -> None:
     network = pd.read_parquet(NETWORK_PATH)
     rows = network[["cell", "month"]].astype(str).sort_values(["month", "cell"]).reset_index(drop=True)
     last = PANEL_MONTHS[1]
-    all_months = month_range(HIST_START, last)
+    inp = load_inputs()
 
-    segments = gpd.read_parquet(ROUTES_PATH)
-    seg_cells = pd.read_parquet(SEGMENT_CELLS_PATH)
-    boroughs = cell_boroughs(segments, seg_cells).astype(str)
-    incidents = pd.read_parquet(INCIDENTS_PATH)
-    incidents["cell"] = incidents["cell"].astype(str)
-    incidents["month"] = incidents["month"].astype(str)
-    propensity = propensity_cells(read_store(Path("data/interim") / PROPENSITY_STORE))
-    citibike = pd.read_parquet(CITIBIKE_PATH).astype({"cell": str, "month": str})
-    lots = pd.read_parquet(pluto_ingest.latest())
-    net_hist = network_history(segments, seg_cells, all_months)
-
-    feats = history_features(rows, incidents, net_hist, propensity, citibike, boroughs, all_months)
-    feats = lane_features(segments, seg_cells, feats)
-    feats = feats.merge(pluto_features(lots, sorted(rows["cell"].unique())), on="cell", how="left")
-    feats["month_of_year"] = feats["month"].str.slice(5, 7).astype("int8")
-    feats["boro"] = feats["cell"].map(boroughs.set_index("cell")["boro"]).astype("int8")
+    feats = cell_month_features(rows, inp, last)
     feats.to_parquet(CELL_MONTH_PATH, index=False)
     print(f"wrote {CELL_MONTH_PATH}: {len(feats):,} rows x {feats.shape[1]} columns")
 
     keys = pd.read_parquet(PANEL_PATH, columns=["cell", "month", "hour_of_week"])
-    ch = cell_how_history(keys, incidents, all_months)
+    ch = cell_how_history(keys, inp.incidents, month_range(HIST_START, last))
     ch.to_parquet(CELL_HOW_PATH, index=False)
     print(f"wrote {CELL_HOW_PATH}: {len(ch):,} rows")
 
