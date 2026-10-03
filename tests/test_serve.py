@@ -68,7 +68,7 @@ def test_propensity_index_normalized_and_floored():
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     preds, cells, meta = artifact_frames()
-    write(preds, cells, meta, tmp_path)
+    write(preds, cells, meta, tmp_path, land=["892a100d2cbffff"])
     monkeypatch.setenv("CLEARLANE_SERVING_DIR", str(tmp_path))
     app_module.artifact.cache_clear()
     yield TestClient(app_module.app)
@@ -101,3 +101,21 @@ def test_cell_detail(client):
     assert r["lane_share"]["protected"] == 0.6
     assert r["weekly"]["predicted"] == pytest.approx(2 * (0.5 + 0.01 * 167))
     assert client.get("/api/cell/89ffffffffffff").status_code == 404
+
+
+def test_grid_lists_network_and_grey_cells(client):
+    g = client.get("/api/grid").json()
+    assert g["network"] == CELLS and g["off_network"] == ["892a100d2cbffff"]
+
+
+def test_scale_edges_from_positive_values():
+    from clearlane.serve.export import SCALE_QUANTILES, scale_edges
+    edges = scale_edges(np.array([0.0] * 50 + list(range(1, 101))))
+    assert len(edges) == len(SCALE_QUANTILES) and edges == sorted(edges) and edges[0] > 0
+
+
+def test_map_page_served_from_same_origin(client):
+    r = client.get("/")
+    assert r.status_code == 200 and "<title>ClearLane</title>" in r.text
+    assert "reported" in r.text.lower()
+    assert client.get("/map.js").status_code == 200

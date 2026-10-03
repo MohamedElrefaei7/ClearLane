@@ -9,6 +9,8 @@ Everything is loaded once at startup from `data/artifacts/serving/` (or
     GET /api/slot?day=Mon&hour=8&layer=predicted   one slot, every on-network cell
     GET /api/slot?how=8&layer=adjusted             same, by hour-of-week (0 = Mon 00:00)
     GET /api/cell/{cell}                           detail + 168-slot series per layer
+    GET /api/grid                                  network cells + off-network land cells
+    GET /                                          the map (web/)
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.staticfiles import StaticFiles
 
 from clearlane.serve.export import LAYERS, SERVING_DIR
 
@@ -38,6 +41,8 @@ class Artifact:
         self.layers = {l: preds[l].to_numpy(dtype=float).reshape(n, SLOTS) for l in LAYERS}
         self.hours = preds["historical_hours"].to_numpy(dtype=float).reshape(n, SLOTS)
         self.detail = pd.read_parquet(directory / "cells.parquet").set_index("cell")
+        land = directory / "land_cells.parquet"
+        self.land = pd.read_parquet(land)["cell"].astype(str).tolist() if land.exists() else []
 
 
 @lru_cache(maxsize=1)
@@ -67,6 +72,13 @@ def resolve_how(how: int | None, day: str | None, hour: int | None) -> int:
 @app.get("/api/meta")
 def meta() -> dict:
     return artifact().meta
+
+
+@app.get("/api/grid")
+def grid() -> dict:
+    """On-network cells and off-network land cells (drawn grey: no bike lane)."""
+    a = artifact()
+    return {"network": a.cells, "off_network": a.land}
 
 
 @app.get("/api/slot")
@@ -112,3 +124,8 @@ def cell(cell: str) -> dict:
         "historical_hours": a.hours[i].tolist(),
         "caveat": a.meta["caveat"],
     }
+
+
+WEB_DIR = Path(__file__).resolve().parents[3] / "web"
+if WEB_DIR.exists():
+    app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")

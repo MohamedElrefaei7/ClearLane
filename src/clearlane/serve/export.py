@@ -15,7 +15,12 @@ complete month). Features for M use only data through M-1. Writes to
                 `historical_hours` = the exposure behind it (0 = no history).
 * `cells.parquet` — per cell: centre, borough, lane metres by type, propensity
   index, weekly totals per layer.
-* `meta.json` — month, model version, factor, units, caveats.
+* `land_cells.parquet` — res-9 cells on NYC land that are NOT on the network
+  (drawn grey, "no bike lane"): every cell containing a PLUTO tax-lot centroid,
+  minus the network cells.
+* `meta.json` — month, model version, factor, units, caveats, and per-layer
+  colour-scale bin edges (quantiles of positive values over all cells x slots,
+  so the scale is fixed across the week; historical uses the predicted edges).
 
 Invariant 8 is checked before anything is written.
 """
@@ -32,7 +37,7 @@ import h3
 import numpy as np
 import pandas as pd
 
-from clearlane.config import PANEL_MONTHS
+from clearlane.config import H3_RES, PANEL_MONTHS
 from clearlane.features.build import LANE_TYPES, cell_how_history, cell_month_features, load_inputs, month_range
 from clearlane.ingest.sr311 import month_bounds
 from clearlane.models.lgbm import ARTIFACT_DIR, assemble, load_model, predict_mu
@@ -43,6 +48,7 @@ from clearlane.spatial.grid import BOROUGHS, DEFAULT_SCOPE, network_cell_months
 SERVING_DIR = ARTIFACT_DIR / "serving"
 LAYERS = ["predicted", "adjusted", "historical"]
 PROPENSITY_FLOOR_QUANTILE = 0.05
+SCALE_QUANTILES = [0.5, 0.7, 0.8, 0.9, 0.95, 0.98, 0.995]  # 7 edges -> 8 colour bins
 CAVEAT = ("All layers show REPORTED obstruction: 311 'Blocked Bike Lane' requests, not observed obstruction. "
           "Reporting varies sharply by neighborhood. The reporting-adjusted layer is a heuristic.")
 
@@ -79,6 +85,18 @@ def validate_artifact(preds: pd.DataFrame, cells: pd.Series) -> None:
             problems.append(f"negative {col}")
     if problems:
         raise ValueError("invariant 8 violated: " + "; ".join(problems))
+
+
+def scale_edges(values: np.ndarray) -> list[float]:
+    """Bin edges for the map colour scale: quantiles of the positive values."""
+    pos = values[values > 0]
+    return [float(q) for q in np.quantile(pos, SCALE_QUANTILES)] if len(pos) else [0.0] * len(SCALE_QUANTILES)
+
+
+def off_network_land_cells(lots: pd.DataFrame, network_cells: set[str], res: int = H3_RES) -> list[str]:
+    pts = lots.dropna(subset=["latitude", "longitude"])
+    land = {h3.latlng_to_cell(a, b, res) for a, b in zip(pts["latitude"], pts["longitude"])}
+    return sorted(land - network_cells)
 
 
 def historical_rates(cells: list[str], month: str) -> pd.DataFrame:
@@ -130,6 +148,7 @@ def build(month: str) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
     cell_tab = (centre.join(cm.set_index("cell")["boro"].map(lambda b: BOROUGHS[str(b)]).rename("borough"))
                 .join(lanes).join(pidx.rename("propensity_index")).join(weekly).rename_axis("cell").reset_index())
 
+    land = off_network_land_cells(inp.lots, set(cells))
     sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True).stdout.strip()
     meta_out = {
         "month": month,
@@ -148,15 +167,22 @@ def build(month: str) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
             "historical": "observed incidents / exposure hours over the previous 12 months; no model",
         },
         "caveat": CAVEAT,
+        # Historical shares the predicted scale: same units, and it exists to sanity-check layer 1.
+        "scale": {"predicted": scale_edges(preds["predicted"].to_numpy()),
+                  "adjusted": scale_edges(preds["adjusted"].to_numpy()),
+                  "historical": scale_edges(preds["predicted"].to_numpy())},
+        "off_network_land_cells": len(land),
     }
-    return preds, cell_tab, meta_out
+    return preds, cell_tab, meta_out, land
 
 
-def write(preds: pd.DataFrame, cells: pd.DataFrame, meta: dict, out_dir: Path = SERVING_DIR) -> None:
+def write(preds: pd.DataFrame, cells: pd.DataFrame, meta: dict, out_dir: Path = SERVING_DIR,
+          land: list[str] | None = None) -> None:
     validate_artifact(preds, cells["cell"])
     out_dir.mkdir(parents=True, exist_ok=True)
     preds.astype({"hour_of_week": "int16"}).to_parquet(out_dir / "predictions.parquet", index=False)
     cells.to_parquet(out_dir / "cells.parquet", index=False)
+    pd.DataFrame({"cell": land or []}, dtype="string").to_parquet(out_dir / "land_cells.parquet", index=False)
     (out_dir / "meta.json").write_text(json.dumps(meta, indent=1))
 
 
@@ -164,9 +190,9 @@ def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--month", default=next_month(PANEL_MONTHS[1]))
     args = ap.parse_args(argv)
-    preds, cells, meta = build(args.month)
-    write(preds, cells, meta)
-    print(json.dumps({k: meta[k] for k in ("month", "cells", "recalibration", "model")}, indent=1))
+    preds, cells, meta, land = build(args.month)
+    write(preds, cells, meta, land=land)
+    print(json.dumps({k: meta[k] for k in ("month", "cells", "off_network_land_cells", "recalibration", "model", "scale")}, indent=1))
     print(cells[[f"{l}_weekly" for l in LAYERS]].describe().round(3).to_string())
     print(f"wrote {SERVING_DIR}")
 
