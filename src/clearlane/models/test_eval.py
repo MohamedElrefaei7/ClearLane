@@ -9,10 +9,15 @@ Evaluates on the test split (CLAUDE.md: touched once per model version):
     (clearlane.models.recalibrate); the first test months use validation months,
     all out-of-sample.
 
-Each version is identified by a hash of its fitted parameters. Results are
-appended to `reports/test_evaluations.json` (tracked); a version already present
-is refused unless `--force` (which should be recorded as a decision). Writes
-`reports/m8_test.md`.
+Each version is identified by a hash of its fitted parameters. New versions are
+evaluated and appended to `reports/test_evaluations.json` (tracked) and
+`reports/m8_test.md` is rewritten. A version already in the ledger is refused,
+except:
+  --verify  recompute the metrics of versions already in the ledger and check
+            they match the recorded numbers (reproduction; nothing is appended,
+            the report is not rewritten). Fails on any mismatch.
+  --auto    verify known versions and record new ones (used by the pipeline).
+  --force   re-record known versions (should itself be a recorded decision).
 """
 
 from __future__ import annotations
@@ -41,13 +46,31 @@ LEDGER = Path("reports/test_evaluations.json")  # tracked in git so a fresh clon
 REPORT_PATH = Path("reports/m8_test.md")
 
 
+LEDGER_METRICS = ("mean_poisson_deviance", "top_decile_capture", "obs_over_pred", "incidents", "predicted_incidents")
+
+
+def verify(results: dict, recorded: dict, names: set[str], rel: float = 1e-9) -> set[str]:
+    """Names whose recomputed metrics differ from the ledger beyond float noise."""
+    bad = set()
+    for name in names:
+        old = recorded[results[name]["version"]]
+        for m in LEDGER_METRICS:
+            a, b = float(results[name][m]), float(old[m])
+            if abs(a - b) > rel * max(1.0, abs(b)):
+                bad.add(name)
+    return bad
+
+
 def file_hash(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()[:12]
 
 
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--force", action="store_true", help="re-evaluate versions already in the ledger")
+    mode = ap.add_mutually_exclusive_group()
+    mode.add_argument("--force", action="store_true", help="re-record versions already in the ledger")
+    mode.add_argument("--verify", action="store_true", help="check known versions reproduce; append nothing")
+    mode.add_argument("--auto", action="store_true", help="verify known versions, record new ones")
     args = ap.parse_args(argv)
 
     lgbm_hash = file_hash(ARTIFACT_DIR / "lgbm_full.txt") + file_hash(ARTIFACT_DIR / "lgbm_full.json")
@@ -63,10 +86,15 @@ def main(argv: list[str] | None = None) -> None:
                 "lightgbm_recal": f"lgbm_full+recal{WINDOW}m:{lgbm_hash}"}
 
     ledger = json.loads(LEDGER.read_text()) if LEDGER.exists() else []
-    seen = {e["version"] for e in ledger}
-    already = [v for v in versions.values() if v in seen]
-    if already and not args.force:
-        raise SystemExit(f"test split already evaluated for {already}; pass --force only if that is a recorded decision")
+    recorded = {e["version"]: e for e in ledger}  # latest entry per version
+    known = {k for k, v in versions.items() if v in recorded}
+    if args.verify and len(known) < len(versions):
+        raise SystemExit(f"--verify: versions not in the ledger: {[versions[k] for k in versions if k not in known]}")
+    if known and not (args.force or args.verify or args.auto):
+        raise SystemExit(f"test split already evaluated for {[versions[k] for k in known]}; "
+                         "use --verify to reproduce, or --force only if that is a recorded decision")
+    to_verify = known if (args.verify or args.auto) else set()
+    to_record = set(versions) - to_verify
 
     test_months = month_range(*TEST)
     lead = month_range(month_range("2000-01", test_months[0])[-WINDOW - 1], test_months[-1])
@@ -84,12 +112,22 @@ def main(argv: list[str] | None = None) -> None:
         r = evaluate(tk, p)
         results[name] = {**r, "obs_over_pred": bias(tk, p), "version": versions[name]}
 
+    if to_verify:
+        mismatches = verify(results, recorded, to_verify)
+        for name in sorted(to_verify):
+            r = results[name]
+            print(f"verify {name:15s} deviance {r['mean_poisson_deviance']:.6g}  top-decile {r['top_decile_capture']:.4f}  "
+                  f"obs/pred {r['obs_over_pred']:.4f}  -> {'MISMATCH' if name in mismatches else 'matches ledger'}")
+        if mismatches:
+            raise SystemExit(f"test metrics do not reproduce for {sorted(mismatches)}")
+    if not to_record:
+        return
+
     now = dt.datetime.now().astimezone().isoformat(timespec="seconds")
     sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True).stdout.strip()
-    ledger += [{"version": v["version"], "evaluated_at": now, "commit": sha,
+    ledger += [{"version": results[k]["version"], "evaluated_at": now, "commit": sha,
                 "test_months": [test_months[0], test_months[-1]],
-                **{k: v[k] for k in ("mean_poisson_deviance", "top_decile_capture", "obs_over_pred", "incidents",
-                                     "predicted_incidents")}} for v in results.values()]
+                **{m: results[k][m] for m in LEDGER_METRICS}} for k in versions if k in to_record]
     LEDGER.write_text(json.dumps(ledger, indent=1, default=float))
 
     metrics = pd.DataFrame([{"model": k, "mean_poisson_deviance": v["mean_poisson_deviance"],
