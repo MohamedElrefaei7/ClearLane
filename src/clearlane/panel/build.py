@@ -28,8 +28,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from clearlane.config import PANEL_MONTHS
-from clearlane.ingest.sr311 import month_bounds, month_range
+from clearlane.ingest.sr311 import month_bounds, month_range, panel_months
 from clearlane.panel.incidents import build_incidents, hour_of_week
 from clearlane.spatial.grid import NETWORK_PATH
 from clearlane.spatial.snap import OUT_PATH as SNAPPED_PATH
@@ -102,7 +101,8 @@ def main() -> None:
     snapped = pd.read_parquet(SNAPPED_PATH)
     kept = snapped[snapped["cell"].notna()].reset_index(drop=True)
     network = pd.read_parquet(NETWORK_PATH)
-    expected = month_range(*PANEL_MONTHS)
+    span = panel_months()
+    expected = month_range(*span)
     if sorted(network["month"].unique()) != expected:
         raise RuntimeError("network_cell_months does not cover the panel months; rerun clearlane.spatial.grid")
 
@@ -112,7 +112,7 @@ def main() -> None:
     panel.to_parquet(PANEL_PATH, index=False)
 
     record = {"run_at": pd.Timestamp.now(tz="UTC").isoformat(timespec="seconds"),
-              "panel_months": list(PANEL_MONTHS), **stats,
+              "panel_months": list(span), **stats,
               "dedup_ratio_in_panel": round(stats["incidents_in_panel"] / stats["raw_in_panel"], 4)}
     with RUN_LOG.open("a") as f:
         f.write(json.dumps(record) + "\n")

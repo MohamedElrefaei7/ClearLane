@@ -140,3 +140,27 @@ def test_propensity_points_map_to_cells():
                          "grid_lon": [lng, lng, None], "n": [3, 4, 9]})
     out = propensity_cells(prop)
     assert out.to_dict("records") == [{"cell": C0, "month": "2023-01", "n": 7}]
+
+
+def test_citibike_gap_repeats_last_archived_month_only_where_uncovered():
+    from clearlane.features.build import citibike_gap, fill_citibike
+    cb = pd.DataFrame({"cell": ["a", "a", "a"], "month": ["2026-07", "2026-08", "2026-09"],
+                       "starts": [1, 2, 99], "ends": [1, 2, 99]})  # 2026-09 = spill-over from the August archive
+    assert citibike_gap("2026-08", "2026-09") == []
+    assert citibike_gap("2026-08", "2026-10") == ["2026-09"]
+    assert citibike_gap("2026-08", "2026-12") == ["2026-09", "2026-10", "2026-11"]
+    out = fill_citibike(cb, "2026-08", "2026-10").set_index("month")["starts"]
+    assert out.to_dict() == {"2026-07": 1, "2026-08": 2, "2026-09": 2}
+    covered = fill_citibike(cb, "2026-08", "2026-09").set_index("month")["starts"]
+    assert covered.to_dict() == {"2026-07": 1, "2026-08": 2}
+    with pytest.raises(ValueError):
+        citibike_gap(None, "2026-10")
+
+
+def test_citibike_covered_through_ignores_yearly_archives(tmp_path):
+    from clearlane.ingest.citibike import covered_through
+    assert covered_through(tmp_path) is None
+    for name in ("2024-citibike-tripdata.parquet", "202607-citibike-tripdata.parquet", "202608-citibike-tripdata.parquet",
+                 "202608-citibike-tripdata.json"):
+        (tmp_path / name).touch()
+    assert covered_through(tmp_path) == "2026-08"

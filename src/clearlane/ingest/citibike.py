@@ -59,6 +59,14 @@ def list_archives(from_year: int) -> list[str]:
     return sorted(out)
 
 
+def covered_through(parts_dir: Path = PARTS_DIR) -> str | None:
+    """Last month with its own processed monthly archive ('YYYY-MM'). Months after it are not
+    covered, even if trips spanning an archive's end put a few rows there."""
+    months = [f"{m.group(1)}-{m.group(2)}" for p in parts_dir.glob("*.parquet")
+              if (m := re.match(r"(\d{4})(\d{2})-citibike-tripdata", p.name))]
+    return max(months) if months else None
+
+
 def aggregate_csv(f) -> pd.DataFrame:
     """(kind, month, lat, lng, n) counts from one trip CSV stream."""
     header = pd.read_csv(f, nrows=0).columns.str.strip().str.lower()

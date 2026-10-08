@@ -195,3 +195,32 @@ def test_live_one_day_each_store():
     grid = s.propensity_rows("erm2-nwe9", "2025-06-02", "2025-06-03")
     assert sum(int(r["n"]) for r in grid) > 1000
     assert any("g" in r for r in grid)
+
+
+def _manifests(tmp_path, months_complete: dict[str, bool], propensity_override: dict[str, bool] | None = None):
+    from clearlane.ingest.sr311 import PROPENSITY_STORE, write_manifest
+    for store, extra in ((TARGET_STORE, {}), (PROPENSITY_STORE, propensity_override or {})):
+        (tmp_path / store).mkdir(parents=True, exist_ok=True)
+        write_manifest(tmp_path / store, {m: {"complete": c} for m, c in {**months_complete, **extra}.items()})
+
+
+def test_panel_months_ends_at_last_month_complete_in_both_stores(tmp_path, monkeypatch):
+    monkeypatch.setattr(sr311, "TRAIN", ("2026-01", "2026-03"))
+    monkeypatch.setattr(sr311, "TEST", ("2026-07", "2026-09"))
+    months = {m: True for m in sr311.month_range("2025-11", "2026-10")} | {"2026-11": False}
+    _manifests(tmp_path, months)
+    assert sr311.panel_months(tmp_path) == ("2026-01", "2026-10")      # rollover: October now complete
+    _manifests(tmp_path, months, {"2026-10": False})
+    assert sr311.panel_months(tmp_path) == ("2026-01", "2026-09")      # propensity not there yet
+
+
+def test_panel_months_refuses_incomplete_or_missing_months(tmp_path, monkeypatch):
+    monkeypatch.setattr(sr311, "TRAIN", ("2026-01", "2026-03"))
+    monkeypatch.setattr(sr311, "TEST", ("2026-07", "2026-09"))
+    months = {m: True for m in sr311.month_range("2026-01", "2026-09")}
+    _manifests(tmp_path, {**months, "2026-05": False})
+    with pytest.raises(ValueError, match="2026-05"):
+        sr311.panel_months(tmp_path)
+    _manifests(tmp_path, {**months, "2026-09": False})                  # test end not complete yet
+    with pytest.raises(ValueError, match="2026-09"):
+        sr311.panel_months(tmp_path)

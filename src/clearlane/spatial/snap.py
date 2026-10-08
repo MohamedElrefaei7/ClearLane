@@ -34,8 +34,8 @@ import numpy as np
 import pandas as pd
 import shapely
 
-from clearlane.config import H3_RES, PANEL_MONTHS
-from clearlane.ingest.sr311 import TARGET_STORE, month_bounds, read_store
+from clearlane.config import H3_RES
+from clearlane.ingest.sr311 import TARGET_STORE, month_bounds, panel_months, read_store
 from clearlane.spatial.activity import in_scope
 from clearlane.spatial.grid import DEFAULT_SCOPE, ROUTES_PATH, SEGMENT_CELLS_PATH
 
@@ -150,14 +150,15 @@ def main(argv: list[str] | None = None) -> None:
         raise RuntimeError(f"{off_segment} kept complaints were assigned a cell their segment does not touch")
     snapped.to_parquet(OUT_PATH, index=False)
 
-    lo, hi = month_bounds(PANEL_MONTHS[0])[0], month_bounds(PANEL_MONTHS[1])[1]
+    first, last = panel_months()
+    lo, hi = month_bounds(first)[0], month_bounds(last)[1]
     panel = snapped[(snapped["created_date"] >= lo) & (snapped["created_date"] < hi)]
     record = {
         "run_at": pd.Timestamp.now(tz="UTC").isoformat(timespec="seconds"),
         "tolerance_m": args.tolerance_m,
         "scope": args.scope,
         "all_dates": drop_stats(snapped),
-        f"panel_{PANEL_MONTHS[0]}_{PANEL_MONTHS[1]}": drop_stats(panel),
+        f"panel_{first}_{last}": drop_stats(panel),
     }
     with RUN_LOG.open("a") as f:
         f.write(json.dumps(record) + "\n")

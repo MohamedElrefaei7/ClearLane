@@ -22,19 +22,19 @@ The jump in mid-2019, the April 2020 collapse (−90% month on month) and the 20
 
 **Bike network.** DOT "New York City Bike Routes" (`mzxg-pwib`), 29,695 current and retired segments with install and retire dates. The network is restricted to on-street class I (protected) and II (painted) lanes. Within 40 m of an active segment, 96% of complaints are nearest a class I/II on-street lane; shared routes and park paths add about 1,000 cells where a report is near-impossible. That leaves 2,530 H3 res-9 cells ever on the network between 2021-01 and 2026-09 (2,520 in 2026-09).
 
-**Features.** Non-target 311 counts per small grid cell (reporting propensity), Citi Bike trip starts and ends from the public `s3://tripdata` archives (2020-01 → 2026-08), PLUTO release 26v2 (commercial lots, frontage and floor area), and lane length by type.
+**Features.** Non-target 311 counts per small grid cell (reporting propensity), Citi Bike trip starts and ends from the public `s3://tripdata` archives (2020-01 onward; Citi Bike publishes each month a week or more after it ends, so a served month whose previous month is not out yet reuses the last published month, recorded in the artifact's metadata), PLUTO release 26v2 (commercial lots, frontage and floor area), and lane length by type.
 
 ## 3. From complaints to a panel
 
 - **Snapping.** A complaint is kept if an in-network lane that existed at the complaint's timestamp lies within 40 m; it is assigned to the H3 cell where that lane passes closest. 40 m came from the spec and was checked against the data: in every distance band up to 40 m except 5–10 m, 84–95% of complaints name the snapped lane's street (or a cross or intersection street); the 5–10 m band is 50%, mostly intersection points snapped to the crossing lane, which lands in the same cell either way. At 40–60 m agreement falls to about 76%, beyond 60 m to about 40%. In 2021-01 → 2026-09, 9.34% of complaints are dropped: 8,422 with no in-network lane within 40 m, 2,253 near a lane not yet installed (median 151 days before its recorded install date, so mostly not an install-date lag), 285 near retired lanes, 177 without coordinates.
-- **Incidents.** Repeat reports of the same blockage are collapsed: complaints in one cell within 15 minutes of the incident's first report are one incident. 107,872 kept complaints become 82,937 incidents. Chaining reports instead (each within 15 minutes of the previous) changes the count by only 0.8%.
+- **Incidents.** Repeat reports of the same blockage are collapsed: complaints in one cell within 15 minutes of the incident's first report are one incident. 108,037 kept complaints become 83,056 incidents. Chaining reports instead (each within 15 minutes of the previous) changes the count by only 0.8%.
 - **Panel.** One row per on-network (cell, hour-of-week, month), 27,259,176 rows, 99.72% zeros. Exposure is elapsed hours on the New York clock, so DST months are exact (March 2024 has 743 hours, and its Sunday 02:00 slot occurs 4 times rather than 5); every slot keeps its row.
 
 ## 4. Models
 
 - **Baseline.** Two-level empirical-Bayes Gamma-Poisson: each (cell, hour-of-week) rate shrinks toward its borough × hour rate, which shrinks toward the borough rate. Shrinkage strengths are fitted by marginal likelihood on the training data (100 pseudo-hours at cell level).
 - **LightGBM.** Poisson objective with `init_score = log(exposure × base rate)`. 36 features, all built from data strictly before the month being predicted (the leakage invariant is tested by injecting a future spike), except the static PLUTO snapshot. Trained on train, early-stopped on validation (578 rounds). Retraining on the same data reproduces the byte-identical model.
-- **Recalibration.** The model ranks cells well but its overall level follows the training years. Each month's predictions are multiplied by observed ÷ predicted reports over the previous three months, using only past data.
+- **Recalibration.** The model ranks cells well but its overall level follows the training years, so predictions are multiplied by observed ÷ predicted reports over a trailing window, using only past data. The first version used the previous three calendar months; since 2026-10-07 the factor is refreshed every Monday from the 56 days ending two days earlier (Open Data publishes about a day late). The weekly version was chosen on validation, out of a few window lengths and refresh rates, so its validation numbers are slightly flattered; it was then evaluated once on test.
 
 ## 5. Results
 
@@ -46,23 +46,25 @@ The jump in mid-2019, the April 2020 collapse (−90% month on month) and the 20
 | Empirical-Bayes baseline | 0.026467 | 66.5% | 0.964 |
 | LightGBM, no PLUTO | 0.021413 | 86.8% | 0.843 |
 | LightGBM | 0.021355 | 86.8% | 0.854 |
-| LightGBM + recalibration | 0.021293 | 86.7% | 0.998 |
+| LightGBM + 3-month recalibration | 0.021293 | 86.7% | 0.998 |
+| LightGBM + weekly recalibration | 0.021275 | 86.8% | 0.994 |
 
-**Test** (2025-10 → 2026-09, 13,842 incidents; each version evaluated once and recorded in the ledger):
+**Test** (2025-10 → 2026-09, 13,961 incidents; each version evaluated once and recorded in the ledger, re-recorded on 2026-10-07 after the missing 2026-09-30 reports were added — models unchanged):
 
 | Model | Deviance | Top-decile capture | Observed ÷ predicted |
 |---|---|---|---|
-| Empirical-Bayes baseline | 0.026923 | 58.6% | 0.902 |
-| LightGBM | 0.021368 | 85.2% | 0.864 |
-| LightGBM + recalibration (shipped) | 0.021326 | 85.2% | 0.987 |
+| Empirical-Bayes baseline | 0.027163 | 58.5% | 0.910 |
+| LightGBM | 0.021564 | 84.8% | 0.871 |
+| LightGBM + 3-month recalibration (shipped until 2026-10-07) | 0.021525 | 84.8% | 0.995 |
+| LightGBM + weekly recalibration (shipped) | 0.021506 | 84.8% | 0.999 |
 
 What these say:
 
-- **LightGBM clearly beats the baseline**, by 21% in deviance on test, and its top 10% of slots hold 85% of test incidents against 59%. The gap is as large on test as on validation, so early stopping on validation did not flatter it much.
+- **LightGBM clearly beats the baseline**, by 21% in deviance on test, and its top 10% of slots hold 85% of test incidents against 58%. The gap is as large on test as on validation, so early stopping on validation did not flatter it much.
 - **Most of the signal is recent history.** The cell's own incident counts over recent months, overall (1, 3, 12 months) and for the same hour of the week (12, 36 months), carry about 72% of the model's split gain, and hour of day another 10%. Lanes, Citi Bike, 311 propensity and PLUTO each add little.
 - **The baseline's problem is drift, not shrinkage.** On validation its lowest predicted-rate decile saw 8.7× the incidents predicted and its highest 0.86×, while borough totals moved in different directions (Manhattan and Queens down, the Bronx and Brooklyn up). Stronger shrinkage made validation deviance worse, not better; recency features fixed most of it.
-- **Raw LightGBM predicts 16–17% too many reports** (observed ÷ predicted 0.854 on validation, 0.864 on test) because the city-wide report rate fell after 2023. The error is close to a uniform level shift: on validation, predicted-rate deciles 3–10 have observed ÷ predicted between 0.78 and 0.98. The three-month recalibration removes it on both splits but lags turning points: individual test months range from 0.81 to 1.35.
-- **PLUTO barely matters.** Keeping it improves validation deviance by 0.27%, which is why it stays by the agreed rule. The margin was not checked against seed variation.
+- **Raw LightGBM predicts 15–17% too many reports** (observed ÷ predicted 0.854 on validation, 0.871 on test) because the city-wide report rate fell after 2023. The error is close to a uniform level shift: on validation, predicted-rate deciles 3–10 have observed ÷ predicted between 0.78 and 0.98. Both recalibrations remove it on both splits but lag turning points. The three-month version's test months range from 0.81 to 1.35 (mean absolute log error 0.109); the weekly version cuts the lag, 0.81 to 1.27 (0.089), with a small deviance gain. The largest misses (October 2025 at 0.81, March 2026 at 1.27) are fast seasonal swings that no trailing window catches.
+- **PLUTO barely matters, but consistently.** Keeping it improves validation deviance by 0.27%, which is why it stays by the agreed rule. Retraining both variants at four more seeds (same seed for each pair) gave PLUTO the lower deviance every time: a gap of 0.14–0.50%, mean 0.35%, about twice the seed-to-seed spread. Top-decile capture slightly favours the no-PLUTO variant at four of five seeds (by up to 0.5 points). Some of the gain may be the snapshot leak below; month-matched historical PLUTO releases would remove that doubt but were not pursued for an effect this small.
 
 ## 6. Limitations and threats to validity
 
@@ -71,7 +73,7 @@ What these say:
 3. **Network definition.** Only dedicated on-street lanes count. Complaints on shared routes, about lanes not yet built, or more than 40 m from a lane are excluded (9.3% of 2021+ complaints, higher in 2021).
 4. **Drift.** Report volume shifts year to year. Recalibration fixes the level only, with a lag. Spatial drift (which cells rise or fall) is handled only through recency features.
 5. **Feature caveats.** PLUTO is a 2026 snapshot used for every month, a documented exception to the no-future-data invariant. Citi Bike only covers part of the city: 39% of network cells have no station nearby, so zero there means "no data". Lane install dates include placeholders (1,030 segments dated before 1950), and 17 retired segments lack a retire date and are excluded.
-6. **Data freshness.** 311 and DOT data are live. September 2026 was pulled on 2026-10-01, so late reports for it may be missing; a later pull produces a new model version with slightly different numbers.
+6. **Data freshness.** 311 and DOT data are live. The first pull of September 2026 (on 2026-10-01, 09:39 ET) missed all of 2026-09-30 because Open Data publishes a day late; it was re-pulled on 2026-10-07 and the test results re-recorded (the ledger keeps both). A month now counts as complete only 3 days after it ends. Re-pulls can still pick up status changes, which do not affect counts.
 7. **Evaluation choices.** Single train/validation/test split, a single LightGBM configuration with no hyperparameter search, early stopping on validation, metrics on raw (cell, hour, month) rows dominated by zeros.
 
 ## 7. Reproducing these numbers

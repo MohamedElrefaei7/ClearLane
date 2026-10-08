@@ -14,7 +14,8 @@ def test_readme_test_metrics_match_ledger():
     for e in ledger:
         latest[e["version"].split(":")[0]] = e
     rows = {"Empirical-Bayes baseline": "baseline", "LightGBM": "lgbm_full",
-            "LightGBM + 3-month recalibration (shipped)": "lgbm_full+recal3m"}
+            "LightGBM + 3-month recalibration (shipped until 2026-10-07)": "lgbm_full+recal3m",
+            "LightGBM + weekly recalibration (shipped)": "lgbm_full+recalw56d"}
     for label, key in rows.items():
         e = latest[key]
         cells = [f"{e['mean_poisson_deviance']:.6f}", f"{100 * e['top_decile_capture']:.1f}%", f"{e['obs_over_pred']:.3f}"]

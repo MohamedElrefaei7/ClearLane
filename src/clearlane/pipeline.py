@@ -3,6 +3,7 @@
     python -m clearlane.pipeline                  # everything (network pulls + training)
     python -m clearlane.pipeline --from features  # rebuild from cached data onward
     python -m clearlane.pipeline --list
+    python -m clearlane.pipeline --refresh        # new data -> served artifact, no training or test eval
 
 Stages read and write `data/` and `reports/`. Network stages are incremental or
 reuse cached snapshots (see each module). The test-split stage runs with
@@ -33,12 +34,17 @@ STAGES = [
     ("export", "clearlane.serve.export", [], "served artifact for the next month"),
 ]
 NAMES = [s[0] for s in STAGES]
+# The weekly refresh: every data stage plus export. The model, its validation reports and the
+# test ledger stay as they are; a new model version is a deliberate full run.
+REFRESH = [n for n in NAMES if n not in ("baseline", "lgbm", "test-eval")]
 
 
-def run(start: str | None = None, stop: str | None = None) -> None:
+def run(start: str | None = None, stop: str | None = None, only: list[str] | None = None) -> None:
     i0 = NAMES.index(start) if start else 0
     i1 = NAMES.index(stop) if stop else len(STAGES) - 1
     for name, module, argv, what in STAGES[i0:i1 + 1]:
+        if only is not None and name not in only:
+            continue
         print(f"\n=== {name}: {what}", flush=True)
         t = time.time()
         main = importlib.import_module(module).main
@@ -51,6 +57,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--from", dest="start", choices=NAMES)
     ap.add_argument("--to", dest="stop", choices=NAMES)
     ap.add_argument("--list", action="store_true")
+    ap.add_argument("--refresh", action="store_true", help=f"run only {', '.join(REFRESH)}")
     args = ap.parse_args(argv)
     if args.list:
         for name, _, _, what in STAGES:
@@ -58,7 +65,7 @@ def main(argv: list[str] | None = None) -> None:
         return
     if args.start and args.stop and NAMES.index(args.start) > NAMES.index(args.stop):
         ap.error("--from comes after --to")
-    run(args.start, args.stop)
+    run(args.start, args.stop, REFRESH if args.refresh else None)
 
 
 if __name__ == "__main__":

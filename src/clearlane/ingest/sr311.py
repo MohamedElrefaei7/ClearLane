@@ -33,6 +33,7 @@ from typing import Any, Protocol
 
 import pandas as pd
 
+from clearlane.config import TEST, TRAIN
 from clearlane.ingest import socrata
 from clearlane.ingest.socrata import build_params
 
@@ -308,6 +309,30 @@ def is_complete(month: str, now: pd.Timestamp, grace_days: int = PUBLISH_GRACE_D
     """
     nyc_today = now.tz_convert("America/New_York").date()
     return dt.date.fromisoformat(month_bounds(month)[1]) + dt.timedelta(days=grace_days) <= nyc_today
+
+
+def panel_months(data_dir: Path = DATA_DIR) -> tuple[str, str]:
+    """Panel range: TRAIN[0] .. the last month both 311 stores hold as complete.
+
+    The guard against building on a partial month: every month from TRAIN[0] to that
+    end (and at least to the end of TEST) must be pulled and marked complete in both
+    manifests, otherwise this raises. The end moves forward on its own as new months
+    complete, which is the monthly rollover.
+    """
+    manifests = {name: read_manifest(data_dir / name) for name in (TARGET_STORE, PROPENSITY_STORE)}
+    ends = []
+    for name, man in manifests.items():
+        done = [m for m, v in man.items() if v.get("complete")]
+        if not done:
+            raise ValueError(f"{name}: no complete months")
+        ends.append(max(done))
+    end = min(ends)
+    problems = [f"{name} {m}" for m in month_range(TRAIN[0], max(end, TEST[1]))
+                for name, man in manifests.items() if not man.get(m, {}).get("complete")]
+    if problems:
+        raise ValueError(f"311 months missing or incomplete: {', '.join(problems[:6])}"
+                         f"{' ...' if len(problems) > 6 else ''}; re-pull with clearlane.ingest.sr311")
+    return TRAIN[0], end
 
 
 # ---------------------------------------------------------------------------

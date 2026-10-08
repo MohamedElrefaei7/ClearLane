@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Weekly ClearLane refresh, Mondays 07:00 local time (runs on wake if the Mac was asleep).
+     Install: cp scripts/com.clearlane.refresh.plist ~/Library/LaunchAgents/ &&
+              launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.clearlane.refresh.plist
+     Remove:  launchctl bootout gui/$(id -u)/com.clearlane.refresh
+     The path below is this checkout; edit it if the repo moves. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.clearlane.refresh</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/mohamedelrefaei/code/ClearLane/scripts/weekly_refresh.sh</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
+  <key>StandardOutPath</key><string>/Users/mohamedelrefaei/code/ClearLane/data/logs/launchd.out</string>
+  <key>StandardErrorPath</key><string>/Users/mohamedelrefaei/code/ClearLane/data/logs/launchd.err</string>
+</dict>
+</plist>

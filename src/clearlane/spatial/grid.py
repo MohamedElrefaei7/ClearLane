@@ -25,8 +25,8 @@ import pandas as pd
 import shapely
 from shapely.geometry import Polygon
 
-from clearlane.config import H3_RES, PANEL_MONTHS
-from clearlane.ingest.sr311 import month_range
+from clearlane.config import H3_RES
+from clearlane.ingest.sr311 import month_range, panel_months
 from clearlane.spatial.activity import active_in_month, in_scope
 
 ROUTES_PATH = Path("data/interim/bike_routes.parquet")
@@ -113,7 +113,7 @@ def main(argv: list[str] | None = None) -> None:
     seg_cells.to_parquet(SEGMENT_CELLS_PATH, index=False)
     print(f"segment_cells: {len(seg_cells):,} (segment, cell) pairs over {seg_cells['cell'].nunique():,} cells")
 
-    months = month_range(*PANEL_MONTHS)
+    months = month_range(*panel_months())
     for scope in (["all", "lanes_on_street"] if args.compare else [args.scope]):
         net = network_cell_months(segments, seg_cells, months, scope)
         if scope == args.scope:

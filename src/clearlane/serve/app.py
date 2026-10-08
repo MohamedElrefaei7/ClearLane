@@ -2,8 +2,10 @@
 
     uvicorn clearlane.serve.app:app --port 8000
 
-Everything is loaded once at startup from `data/artifacts/serving/` (or
-`CLEARLANE_SERVING_DIR`); requests only index into precomputed arrays.
+Everything is loaded from `data/artifacts/serving/` (or `CLEARLANE_SERVING_DIR`)
+on first use and again whenever `meta.json` changes (the export writes it last), so
+a weekly refresh is picked up without a restart; requests only index into
+precomputed arrays.
 
     GET /api/meta                                  artifact metadata + caveat
     GET /api/slot?day=Mon&hour=8&layer=predicted   one slot, every on-network cell
@@ -17,7 +19,6 @@ from __future__ import annotations
 
 import json
 import os
-from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -45,9 +46,18 @@ class Artifact:
         self.land = pd.read_parquet(land)["cell"].astype(str).tolist() if land.exists() else []
 
 
-@lru_cache(maxsize=1)
+_loaded: dict = {}
+
+
 def artifact() -> Artifact:
-    return Artifact(Path(os.environ.get("CLEARLANE_SERVING_DIR", SERVING_DIR)))
+    directory = Path(os.environ.get("CLEARLANE_SERVING_DIR", SERVING_DIR))
+    stamp = (str(directory), (directory / "meta.json").stat().st_mtime_ns)
+    if _loaded.get("stamp") != stamp:
+        _loaded.update(stamp=stamp, artifact=Artifact(directory))
+    return _loaded["artifact"]
+
+
+artifact.cache_clear = _loaded.clear
 
 
 app = FastAPI(title="ClearLane", description="Reported blocked-bike-lane risk (NYC 311). Not observed obstruction.")

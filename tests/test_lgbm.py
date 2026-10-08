@@ -83,3 +83,52 @@ def test_apply_factor_scales_by_month_and_requires_coverage():
     assert out.tolist() == [0.5, 2.0]
     with pytest.raises(ValueError):
         apply_factor(keys, np.array([1.0, 1.0]), pd.Series({"2025-04": 0.5}))
+
+
+def _daily(start="2025-01-01", end="2025-03-31", obs=1.0, pred=2.0):
+    days = pd.date_range(start, end, freq="D")
+    return pd.DataFrame({"observed": obs, "predicted": pred}, index=days)
+
+
+def test_weekly_factor_uses_only_days_before_the_refresh_lag():
+    from clearlane.models.recalibrate import weekly_factor
+    daily = _daily()
+    days = pd.date_range("2025-03-10", "2025-03-16", freq="D")  # Monday .. Sunday: one refresh
+    f = weekly_factor(daily, days, window_days=28, lag_days=2)
+    assert f.nunique() == 1 and f.iloc[0] == pytest.approx(0.5)
+    changed = daily.copy()
+    changed.loc["2025-03-09":, "observed"] = 1000.0  # the day before the Monday, and the week itself
+    assert weekly_factor(changed, days, window_days=28, lag_days=2).tolist() == f.tolist()
+    changed.loc["2025-03-08", "observed"] = 29.0  # last day inside the window moves the factor
+    assert weekly_factor(changed, days, window_days=28, lag_days=2).iloc[0] == pytest.approx((27 + 29) / 56)
+
+
+def test_weekly_factor_refuses_uncovered_window():
+    from clearlane.models.recalibrate import weekly_factor
+    with pytest.raises(ValueError):
+        weekly_factor(_daily(start="2025-03-01"), pd.date_range("2025-03-10", "2025-03-11"), window_days=28)
+
+
+def test_apply_daily_factor_averages_occurrences_in_month():
+    from clearlane.models.recalibrate import apply_daily_factor
+    days = pd.date_range("2025-04-01", "2025-04-30", freq="D")
+    factor = pd.Series(np.where(days.day <= 14, 1.0, 3.0), index=days)
+    keys = pd.DataFrame({"month": ["2025-04", "2025-04"], "hour_of_week": [0, 24 * 2 + 5]})  # Monday 00, Wednesday 05
+    # April 2025 Mondays 7, 14, 21, 28 -> (1+1+3+3)/4; Wednesdays 2, 9, 16, 23, 30 -> (1+1+3+3+3)/5
+    assert apply_daily_factor(keys, np.array([1.0, 1.0]), factor).tolist() == pytest.approx([2.0, 11 / 5])
+    with pytest.raises(ValueError):
+        apply_daily_factor(keys.assign(month="2025-05"), np.array([1.0, 1.0]), factor)
+
+
+def test_daily_totals_spreads_rates_by_weekday_and_counts_on_network_incidents():
+    from clearlane.models.recalibrate import daily_totals
+    keys = pd.DataFrame({"cell": ["a", "a", "b"], "month": "2025-04", "hour_of_week": [0, 1, 24], "y": 0,
+                         "exposure": [4.0, 4.0, 5.0]})
+    incidents = pd.DataFrame({"cell": ["a", "a", "z"], "month": "2025-04",
+                              "start": pd.to_datetime(["2025-04-07 00:10", "2025-04-07 01:20", "2025-04-07 02:00"])})
+    d = daily_totals(keys, np.array([0.4, 0.8, 1.0]), incidents)
+    assert len(d) == 30
+    assert d.loc["2025-04-07", "predicted"] == pytest.approx(0.1 + 0.2)  # Monday: rate per occurrence
+    assert d.loc["2025-04-08", "predicted"] == pytest.approx(0.2)        # Tuesday
+    assert d.loc["2025-04-09", "predicted"] == 0
+    assert d.loc["2025-04-07", "observed"] == 2                          # cell z is off network

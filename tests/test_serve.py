@@ -119,3 +119,15 @@ def test_map_page_served_from_same_origin(client):
     assert r.status_code == 200 and "<title>ClearLane</title>" in r.text
     assert "reported" in r.text.lower()
     assert client.get("/map.js").status_code == 200
+
+
+def test_app_reloads_when_the_artifact_is_rewritten(client, tmp_path):
+    import os
+    assert client.get("/api/slot", params={"how": 8}).json()["cells"][0]["value"] == 1.0
+    preds, cells, meta = artifact_frames()
+    preds["predicted"] = preds["predicted"] * 2
+    write(preds, cells, {**meta, "month": "next"}, tmp_path, land=["892a100d2cbffff"])
+    st = (tmp_path / "meta.json").stat()
+    os.utime(tmp_path / "meta.json", ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000))  # coarse-clock filesystems
+    assert client.get("/api/meta").json()["month"] == "next"
+    assert client.get("/api/slot", params={"how": 8}).json()["cells"][0]["value"] == 2.0

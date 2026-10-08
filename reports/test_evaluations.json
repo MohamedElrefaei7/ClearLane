@@ -40,5 +40,117 @@
   "obs_over_pred": 0.9867259612305637,
   "incidents": 13842,
   "predicted_incidents": 14028.21101690422
+ },
+ {
+  "version": "baseline:3686df4abc0a",
+  "evaluated_at": "2026-10-07T20:07:22-04:00",
+  "commit": "4b30d44",
+  "test_months": [
+   "2025-10",
+   "2026-09"
+  ],
+  "mean_poisson_deviance": 0.027163013136052634,
+  "top_decile_capture": 0.5847718644796218,
+  "obs_over_pred": 0.9099952304065779,
+  "incidents": 13961,
+  "predicted_incidents": 15341.838653112882
+ },
+ {
+  "version": "lgbm_full:c6347c7210d6cc88367404c3",
+  "evaluated_at": "2026-10-07T20:07:22-04:00",
+  "commit": "4b30d44",
+  "test_months": [
+   "2025-10",
+   "2026-09"
+  ],
+  "mean_poisson_deviance": 0.021563969547837042,
+  "top_decile_capture": 0.848220041544302,
+  "obs_over_pred": 0.8709419717736169,
+  "incidents": 13961,
+  "predicted_incidents": 16029.77058456527
+ },
+ {
+  "version": "lgbm_full+recal3m:c6347c7210d6cc88367404c3",
+  "evaluated_at": "2026-10-07T20:07:22-04:00",
+  "commit": "4b30d44",
+  "test_months": [
+   "2025-10",
+   "2026-09"
+  ],
+  "mean_poisson_deviance": 0.021524704326755812,
+  "top_decile_capture": 0.8480767853305637,
+  "obs_over_pred": 0.9952088675581491,
+  "incidents": 13961,
+  "predicted_incidents": 14028.21101690422
+ },
+ {
+  "version": "lgbm_full+recalw56d:c6347c7210d6cc88367404c3",
+  "evaluated_at": "2026-10-07T20:32:28-04:00",
+  "commit": "4b30d44",
+  "test_months": [
+   "2025-10",
+   "2026-09"
+  ],
+  "mean_poisson_deviance": 0.021505762009720375,
+  "top_decile_capture": 0.848220041544302,
+  "obs_over_pred": 0.9987302831070742,
+  "incidents": 13961,
+  "predicted_incidents": 13978.7490538156
+ },
+ {
+  "version": "baseline:3686df4abc0a",
+  "evaluated_at": "2026-10-07T21:00:32-04:00",
+  "commit": "4b30d44",
+  "test_months": [
+   "2025-10",
+   "2026-09"
+  ],
+  "mean_poisson_deviance": 0.027163013136052634,
+  "top_decile_capture": 0.5847718644796218,
+  "obs_over_pred": 0.9099952304065779,
+  "incidents": 13961,
+  "predicted_incidents": 15341.838653112882
+ },
+ {
+  "version": "lgbm_full:c6347c7210d6cc88367404c3",
+  "evaluated_at": "2026-10-07T21:00:32-04:00",
+  "commit": "4b30d44",
+  "test_months": [
+   "2025-10",
+   "2026-09"
+  ],
+  "mean_poisson_deviance": 0.021563988745226997,
+  "top_decile_capture": 0.848220041544302,
+  "obs_over_pred": 0.8709396011864051,
+  "incidents": 13961,
+  "predicted_incidents": 16029.814215569193
+ },
+ {
+  "version": "lgbm_full+recal3m:c6347c7210d6cc88367404c3",
+  "evaluated_at": "2026-10-07T21:00:32-04:00",
+  "commit": "4b30d44",
+  "test_months": [
+   "2025-10",
+   "2026-09"
+  ],
+  "mean_poisson_deviance": 0.021524722500030957,
+  "top_decile_capture": 0.8480767853305637,
+  "obs_over_pred": 0.9952059562392397,
+  "incidents": 13961,
+  "predicted_incidents": 14028.252054234978
+ },
+ {
+  "version": "lgbm_full+recalw56d:c6347c7210d6cc88367404c3",
+  "evaluated_at": "2026-10-07T21:00:32-04:00",
+  "commit": "4b30d44",
+  "test_months": [
+   "2025-10",
+   "2026-09"
+  ],
+  "mean_poisson_deviance": 0.021505781042647772,
+  "top_decile_capture": 0.848220041544302,
+  "obs_over_pred": 0.998727880722646,
+  "incidents": 13961,
+  "predicted_incidents": 13978.782678919797
  }
 ]

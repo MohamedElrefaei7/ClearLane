@@ -277,7 +277,7 @@ function drawSparkRule() {
     [state.meta, state.grid] = await Promise.all([api("/api/meta"), api("/api/grid")]);
     status.textContent = `Model month ${state.meta.month} · ${state.meta.cells.toLocaleString()} cells on the network`;
     document.getElementById("aboutMeta").textContent =
-      `Serving month ${state.meta.month}; level factor ${state.meta.recalibration.factor.toFixed(3)} from ${state.meta.recalibration.months.join(", ")}; generated ${state.meta.generated_at}. ${state.meta.caveat}`;
+      `Serving month ${state.meta.month}; weekly level factor ${state.meta.recalibration.factor.toFixed(3)} from reports ${state.meta.recalibration.window.join(" to ")}; generated ${state.meta.generated_at}. ${state.meta.caveat}`;
     buildControls();
     updateLegend();
     // Draw as soon as the data is here (the hexes don't need the basemap), and again once the

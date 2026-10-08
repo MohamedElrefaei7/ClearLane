@@ -23,6 +23,9 @@ Feature groups
               conventional) active at M0; newest-lane age in months.
   propensity  non-target 311 requests over 12 months, own cell and own+ring-1.
   citibike    trip starts+ends, previous month and last 12, own and own+ring-1.
+              Citi Bike publishes a month's archive a week or more after it ends;
+              months after the last archive repeat the last archived month
+              (`fill_citibike`). Only the serving month can hit this.
   pluto       commercial lots, commercial lot frontage (ft), retail and
               commercial floor area; own and own+ring-1 (static).
   calendar    month of year; borough code.
@@ -39,10 +42,11 @@ import numpy as np
 import pandas as pd
 import shapely
 
-from clearlane.config import H3_RES, PANEL_MONTHS
+from clearlane.config import H3_RES
 from clearlane.ingest import pluto as pluto_ingest
 from clearlane.ingest.citibike import OUT_PATH as CITIBIKE_PATH
-from clearlane.ingest.sr311 import PROPENSITY_STORE, month_range, read_store
+from clearlane.ingest.citibike import covered_through as citibike_covered_through
+from clearlane.ingest.sr311 import PROPENSITY_STORE, month_range, panel_months, read_store
 from clearlane.panel.build import INCIDENTS_PATH, PANEL_PATH, SLOTS
 from clearlane.spatial.activity import active_at, active_in_month, in_scope
 from clearlane.spatial.grid import (DEFAULT_SCOPE, NETWORK_PATH, ROUTES_PATH, SEGMENT_CELLS_PATH, cell_boroughs,
@@ -258,6 +262,7 @@ class Inputs:
     propensity: pd.DataFrame
     citibike: pd.DataFrame
     lots: pd.DataFrame
+    citibike_through: str  # last month with its own Citi Bike archive
 
 
 def load_inputs() -> Inputs:
@@ -274,14 +279,31 @@ def load_inputs() -> Inputs:
         propensity=propensity_cells(read_store(Path("data/interim") / PROPENSITY_STORE)),
         citibike=pd.read_parquet(CITIBIKE_PATH).astype({"cell": str, "month": str}),
         lots=pd.read_parquet(pluto_ingest.latest()),
+        citibike_through=citibike_covered_through(),
     )
+
+
+def citibike_gap(covered: str, last_month: str) -> list[str]:
+    """Months a row up to `last_month` can read that have no Citi Bike archive yet."""
+    if covered is None:
+        raise ValueError("no Citi Bike archives processed")
+    return month_range(covered, last_month)[1:-1]
+
+
+def fill_citibike(citibike: pd.DataFrame, covered: str, last_month: str) -> pd.DataFrame:
+    """Drop rows after the last archived month, then repeat that month for each uncovered month
+    before `last_month` (stale but closer than zero, which the model reads as no stations)."""
+    cb = citibike[citibike["month"] <= covered]
+    last = cb[cb["month"] == covered]
+    return pd.concat([cb] + [last.assign(month=m) for m in citibike_gap(covered, last_month)], ignore_index=True)
 
 
 def cell_month_features(rows: pd.DataFrame, inp: Inputs, last_month: str) -> pd.DataFrame:
     """Features for (cell, month) `rows` (sorted month, cell), any months up to `last_month`."""
     all_months = month_range(HIST_START, last_month)
     net_hist = network_history(inp.segments, inp.seg_cells, all_months)
-    feats = history_features(rows, inp.incidents, net_hist, inp.propensity, inp.citibike, inp.boroughs, all_months)
+    citibike = fill_citibike(inp.citibike, inp.citibike_through, last_month)
+    feats = history_features(rows, inp.incidents, net_hist, inp.propensity, citibike, inp.boroughs, all_months)
     feats = lane_features(inp.segments, inp.seg_cells, feats)
     feats = feats.merge(pluto_features(inp.lots, sorted(rows["cell"].unique())), on="cell", how="left")
     feats["month_of_year"] = feats["month"].str.slice(5, 7).astype("int8")
@@ -292,7 +314,9 @@ def cell_month_features(rows: pd.DataFrame, inp: Inputs, last_month: str) -> pd.
 def main() -> None:
     network = pd.read_parquet(NETWORK_PATH)
     rows = network[["cell", "month"]].astype(str).sort_values(["month", "cell"]).reset_index(drop=True)
-    last = PANEL_MONTHS[1]
+    last = panel_months()[1]
+    if sorted(rows["month"].unique())[-1] != last:
+        raise RuntimeError("network_cell_months does not end at the last complete 311 month; rerun grid / snap / panel")
     inp = load_inputs()
 
     feats = cell_month_features(rows, inp, last)

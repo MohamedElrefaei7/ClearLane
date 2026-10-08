@@ -8,6 +8,9 @@ Evaluates on the test split (CLAUDE.md: touched once per model version):
   * lightgbm_recal — the same, times the trailing 3-month level factor
     (clearlane.models.recalibrate); the first test months use validation months,
     all out-of-sample.
+  * lightgbm_recal_weekly — the same model with the weekly level factor
+    (refreshed each Monday from the trailing WINDOW_DAYS days, LAG_DAYS lag);
+    shipped since 2026-10-07.
 
 Each version is identified by a hash of its fitted parameters. New versions are
 evaluated and appended to `reports/test_evaluations.json` (tracked) and
@@ -38,7 +41,8 @@ from clearlane.ingest.sr311 import month_range
 from clearlane.models.baseline import EBBaseline
 from clearlane.models.eval import calibration_table, evaluate
 from clearlane.models.lgbm import ARTIFACT_DIR, _table
-from clearlane.models.recalibrate import WINDOW, apply_factor, bias, monthly_totals, raw_predictions, trailing_factor
+from clearlane.models.recalibrate import (LAG_DAYS, WINDOW, WINDOW_DAYS, apply_factor, bias, monthly_totals,
+                                          raw_predictions, trailing_factor, weekly_recalibrated)
 from clearlane.panel.build import PANEL_PATH
 from clearlane.spatial.grid import ROUTES_PATH, SEGMENT_CELLS_PATH, cell_boroughs
 
@@ -83,7 +87,8 @@ def main(argv: list[str] | None = None) -> None:
     base_hash = hashlib.sha256(pd.util.hash_pandas_object(base.slot_rate[["cell", "hour_of_week", "rate"]],
                                                           index=False).values.tobytes()).hexdigest()[:12]
     versions = {"baseline": f"baseline:{base_hash}", "lightgbm_raw": f"lgbm_full:{lgbm_hash}",
-                "lightgbm_recal": f"lgbm_full+recal{WINDOW}m:{lgbm_hash}"}
+                "lightgbm_recal": f"lgbm_full+recal{WINDOW}m:{lgbm_hash}",
+                "lightgbm_recal_weekly": f"lgbm_full+recalw{WINDOW_DAYS}d:{lgbm_hash}"}
 
     ledger = json.loads(LEDGER.read_text()) if LEDGER.exists() else []
     recorded = {e["version"]: e for e in ledger}  # latest entry per version
@@ -102,10 +107,12 @@ def main(argv: list[str] | None = None) -> None:
     factor = trailing_factor(monthly_totals(keys, mu))
     is_test = keys["month"].isin(test_months).to_numpy()
     tk, traw = keys[is_test].reset_index(drop=True), mu[is_test]
+    tweekly, _ = weekly_recalibrated(keys, mu, test_months)
     preds = {
         "baseline": base.predict_rate(tk, boroughs) * tk["exposure"].to_numpy(),
         "lightgbm_raw": traw,
         "lightgbm_recal": apply_factor(tk, traw, factor),
+        "lightgbm_recal_weekly": tweekly,
     }
     results = {}
     for name, p in preds.items():
@@ -135,9 +142,11 @@ def main(argv: list[str] | None = None) -> None:
                              "predicted_incidents": v["predicted_incidents"]} for k, v in results.items()])
     months = (monthly_totals(tk, preds["lightgbm_raw"]).rename(columns={"predicted": "raw"})
               .join(factor).join(monthly_totals(tk, preds["lightgbm_recal"])["predicted"].rename("recal"))
+              .join(monthly_totals(tk, preds["lightgbm_recal_weekly"])["predicted"].rename("weekly"))
               .join(monthly_totals(tk, preds["baseline"])["predicted"].rename("baseline")))
     months["obs/raw"] = months["observed"] / months["raw"]
     months["obs/recal"] = months["observed"] / months["recal"]
+    months["obs/weekly"] = months["observed"] / months["weekly"]
     months = months.reset_index()
     md = "\n".join([
         "# M8 — test-split evaluation (one-time)",
@@ -148,7 +157,8 @@ def main(argv: list[str] | None = None) -> None:
         f"- Generated: {now} at commit `{sha}`; ledger: `{LEDGER}`",
         f"- Test {TEST[0]} → {TEST[1]}: {results['baseline']['rows']:,} rows, {results['baseline']['incidents']:,} incidents",
         f"- Models fitted on train ({TRAIN[0]} → {TRAIN[1]}); LightGBM early-stopped on validation. "
-        f"Recalibration factor = observed / raw predicted over the previous {WINDOW} months.",
+        f"Recalibration factor = observed / raw predicted over the previous {WINDOW} months (recal), or over the "
+        f"{WINDOW_DAYS} days ending {LAG_DAYS} days before each Monday refresh (weekly, shipped since 2026-10-07).",
         "- Versions: " + "; ".join(f"`{v}`" for v in versions.values()),
         "",
         "## Test metrics",
@@ -159,7 +169,11 @@ def main(argv: list[str] | None = None) -> None:
         "",
         _table(months),
         "",
-        "## Calibration by predicted-rate decile — LightGBM recalibrated",
+        "## Calibration by predicted-rate decile — LightGBM weekly recalibration (shipped)",
+        "",
+        _table(calibration_table(tk, preds["lightgbm_recal_weekly"])),
+        "",
+        "## Calibration by predicted-rate decile — LightGBM monthly recalibration",
         "",
         _table(calibration_table(tk, preds["lightgbm_recal"])),
         "",

@@ -31,3 +31,13 @@ def test_verify_flags_only_real_differences():
     assert verify(same, rec, {"m"}) == set()
     off = {"m": {**same["m"], "top_decile_capture": 0.8501}}
     assert verify(off, rec, {"m"}) == {"m"}
+
+
+def test_refresh_skips_training_and_test_eval(monkeypatch):
+    called = []
+    monkeypatch.setattr(pipeline.importlib, "import_module",
+                        lambda m: type("M", (), {"main": staticmethod(lambda argv=None, m=m: called.append(m))}))
+    pipeline.main(["--refresh"])
+    names = [n for n, mod, _, _ in pipeline.STAGES if mod in called]
+    assert names == [n for n in pipeline.NAMES if n not in ("baseline", "lgbm", "test-eval")]
+    assert names[0] == "sr311" and names[-1] == "export"
