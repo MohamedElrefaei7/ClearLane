@@ -12,7 +12,8 @@ Two stores under `data/interim/`, one Parquet file per calendar month of
 * `sr311_propensity/YYYY-MM.parquet` — counts of every *other* 311 request per
   (month, 0.002° grid cell), aggregated server-side with SoQL `snap_to_grid`.
   Each pull replaces the whole month. Requests with no location get a null
-  cell. `month_complete` is False when the month had not ended at pull time.
+  cell. `month_complete` is False when the month had not ended at least
+  `PUBLISH_GRACE_DAYS` before pull time.
 
 Each store has a `_manifest.json` recording, per month, when it was last
 pulled and whether the month was complete then. Without `--start`, a run
@@ -49,6 +50,7 @@ SR_DATASETS = [
 TARGET = ("Illegal Parking", "Blocked Bike Lane")
 DEFAULT_START = "2016-01"
 OVERLAP_MONTHS = 2
+PUBLISH_GRACE_DAYS = 3  # a month counts as complete only this many days after it ends (see is_complete)
 GRID_DEG = 0.002  # snap_to_grid rounds to the nearest multiple: points are cell centres
 PAGE_LIMIT = 50_000
 WORKERS = 4
@@ -298,10 +300,14 @@ def read_store(store: Path) -> pd.DataFrame:
     return pd.concat([pd.read_parquet(f) for f in files], ignore_index=True)
 
 
-def is_complete(month: str, now: pd.Timestamp) -> bool:
-    """Whether `month` had ended (NYC wall clock) at `now`."""
-    nyc_today = now.tz_convert("America/New_York").date().isoformat()
-    return month_bounds(month)[1] <= nyc_today
+def is_complete(month: str, now: pd.Timestamp, grace_days: int = PUBLISH_GRACE_DAYS) -> bool:
+    """Whether `month` had ended (NYC wall clock) at least `grace_days` full days before `now`.
+
+    Open Data publishes each day's requests about a day later, so a pull made just after
+    month end lacks the last day (the 2026-10-01 09:39 ET pull had none of 2026-09-30).
+    """
+    nyc_today = now.tz_convert("America/New_York").date()
+    return dt.date.fromisoformat(month_bounds(month)[1]) + dt.timedelta(days=grace_days) <= nyc_today
 
 
 # ---------------------------------------------------------------------------

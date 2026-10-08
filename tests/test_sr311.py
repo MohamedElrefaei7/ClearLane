@@ -129,9 +129,17 @@ def test_manifest_marks_current_month_incomplete(src, tmp_path):
 
 
 def test_completeness_uses_nyc_date():
-    # 2023-05-01 02:00 UTC is still April 30 in New York.
-    assert not sr311.is_complete("2023-04", pd.Timestamp("2023-05-01T02:00:00", tz="UTC"))
-    assert sr311.is_complete("2023-04", pd.Timestamp("2023-05-01T05:00:00", tz="UTC"))
+    # 2023-05-04 02:00 UTC is still May 3 in New York.
+    assert not sr311.is_complete("2023-04", pd.Timestamp("2023-05-04T02:00:00", tz="UTC"))
+    assert sr311.is_complete("2023-04", pd.Timestamp("2023-05-04T05:00:00", tz="UTC"))
+
+
+def test_month_not_complete_until_publishing_catches_up():
+    # The real case: pulled 2026-10-01 09:39 ET, before Open Data had published 2026-09-30.
+    assert not sr311.is_complete("2026-09", pd.Timestamp("2026-10-01T13:39:20", tz="UTC"))
+    assert not sr311.is_complete("2026-09", pd.Timestamp("2026-10-03T23:00:00", tz="UTC"))
+    assert sr311.is_complete("2026-09", pd.Timestamp("2026-10-04T12:00:00", tz="UTC"))
+    assert sr311.is_complete("2026-09", pd.Timestamp("2026-10-01T13:39:20", tz="UTC"), grace_days=0)
 
 
 # --- propensity --------------------------------------------------------------
